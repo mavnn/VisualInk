@@ -2,7 +2,7 @@
 
 Visual Ink is a project started by [Michael Newton](https://blog.mavnn.co.uk/), an IT industry veteran and long time interactive story teller (mostly via table top roleplaying games). You can see the code that runs this server or even help to improve the project (whether that's by coding, providing art assets, or helping write the tutorials provided) at the projects [GitHub repository](https://github.com/mavnn/VisualInk).
 
-But this project is built on mostly on the generosity of a number of open source and royalty free projects that make running a website like this for education feasible. Here's the main people you should thank for this project existing:
+But this is very much a project built on the generosity of a number of open source and royalty free projects that make running a website like this for education feasible. Here's the main people you should thank for this project existing:
 
 - [Ink](https://www.inklestudios.com/ink/) from Inkle Studios is a production grade domain specific language for writing narrative in games. The scripts you write in Visual Ink are just Ink files, and it's an amazing resource for them to be giving away freely to encourage other storytellers given it is the tool they use themselves to build their own games.
 - Liborio Conti provides [No Copyright Music](https://www.no-copyright-music.com/) (in name, and in fact). All of the shared background music assets available when you first login come from Liborio.

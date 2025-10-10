@@ -36,6 +36,7 @@ VAR music = ""
 
 The smell of coffee filled the air.
 
+~music = "Background Jazz"
 ~speaker = "Eddy"
 
 Right! I'm off to school.

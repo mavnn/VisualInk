@@ -264,11 +264,33 @@ let indexGet =
               [
 
                 B.image
-                  [ _style_
+                  [ _class_ "mb-2"
+                    _style_
                       "width: 100%; object-fill: none;" ]
                   [ _src_ "/example.png"
+                    _style_ "border-radius: var(--bulma-radius-medium);"
                     _alt_
-                      "Picture of a visual novel playthrough in progress with a cartoon character saying 'Once upon a time'" ] ] ] ]
+                      "Picture of a visual novel play through in progress with a cartoon character saying 'Once upon a time'" ]
+                B.block [] [
+                   B.box [] [
+                       _text 
+                         """
+VAR speaker = "Narrator"
+VAR scene = ""
+VAR music = ""
+
+~scene = "Cafe"
+
+The smell of coffee filled the air.
+
+~music = "Background Jazz"
+~speaker = "Eddy"
+
+Once upon a time...
+                         """ |> B.enclose _pre
+
+                   ]
+                ]] ] ]
       |> B.container []
       |> List.singleton
       |> template "Visual Ink"

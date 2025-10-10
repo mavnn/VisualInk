@@ -186,3 +186,9 @@ let columns attr content =
 
 let column attr content =
     _div (Attr.merge [_class_ "column"] attr) content
+
+let notification attr content =
+    _div (Attr.merge [_class_ "notification"] attr) content
+
+let box attr content =
+    _div (Attr.merge [_class_ "box"] attr) content
