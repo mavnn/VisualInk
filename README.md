@@ -51,7 +51,8 @@ See you there!
 
 ~speaker = "Mr. Noone"
 
-...and that's why we can see that Odysseus, despite the trappings of a hero is really... #emote disguise
+...and that's why we can see that Odysseus, despite the <>
+trappings of a hero is really... #emote disguise
 ```
 
 ## You'd like to help improve and add to the lessons and tutorials?
