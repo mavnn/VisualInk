@@ -230,30 +230,45 @@ let indexGet =
 
     let html =
       [ B.title [] "Welcome to Visual Ink!"
-        B.content
+        B.columns
           []
-          [ _p'
-              "Visual Ink is a fun tool for building and playing visual novels."
-            _p
-              []
-              [ _text "It uses "
-                _a
-                  [ _href_
-                      "https://www.inklestudios.com/ink/"
-                    Hx.boostOff ]
-                  [ _text "Ink" ]
-                _text
-                  " from Inkle Studios to let you write your visual novel as if it were a movie script." ]
-            _p
-              []
-              [ _text
-                  "Not sure how to get started? Well, you'll need to "
-                _a
-                  [ _href_ "/user/signup" ]
-                  [ _text "sign up" ]
-                _text " if it is your first time here." ]
-            _p'
-              "After that, try the 'Scripts' button in the menu at the top, and create your first script. Or if you're in a class or club, I'm sure the person who's running it will have something ready for you!" ] ]
+          [ B.column
+              [ _class_ "is-half" ]
+              [ B.content
+                  []
+                  [ _p'
+                      "Visual Ink is a fun tool for building and playing visual novels."
+                    _p
+                      []
+                      [ _text "It uses "
+                        _a
+                          [ _href_
+                              "https://www.inklestudios.com/ink/"
+                            Hx.boostOff ]
+                          [ _text "Ink" ]
+                        _text
+                          " from Inkle Studios to let you write your visual novel as if it were a movie script." ]
+                    _p
+                      []
+                      [ _text
+                          "Not sure how to get started? Well, you'll need to "
+                        _a
+                          [ _href_ "/user/signup" ]
+                          [ _text "sign up" ]
+                        _text
+                          " if it is your first time here." ]
+                    _p'
+                      "After that, try the 'Scripts' button in the menu at the top, and create your first script. Or if you're in a class or club, I'm sure the person who's running it will have something ready for you!" ] ]
+            B.column
+              [ _class_ "is-half" ]
+              [
+
+                B.image
+                  [ _style_
+                      "width: 100%; object-fill: none;" ]
+                  [ _src_ "/example.png"
+                    _alt_
+                      "Picture of a visual novel playthrough in progress with a cartoon character saying 'Once upon a time'" ] ] ] ]
       |> B.container []
       |> List.singleton
       |> template "Visual Ink"
@@ -295,15 +310,14 @@ type UserIdEnricher
         logEvent.AddPropertyIfAbsent(
           propertyFactory.CreateProperty("UserId", u.id)
         )
-      | None ->
-          ()
+      | None -> ()
 
 [<EntryPoint>]
 let main _ =
   let makeLogConfig (lc: Serilog.LoggerConfiguration) =
     let logConfig =
-      lc
-        .MinimumLevel.Override(
+      lc.MinimumLevel
+        .Override(
           "Microsoft.AspNetCore",
           LogEventLevel.Warning
         )
@@ -318,10 +332,16 @@ let main _ =
       )
       |> ignore
     else
-      logConfig.WriteTo.Console(outputTemplate = "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} U:{UserId}{NewLine}{Exception}") |> ignore
+      logConfig.WriteTo.Console(
+        outputTemplate =
+          "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} U:{UserId}{NewLine}{Exception}"
+      )
+      |> ignore
+
     logConfig
 
-  Log.Logger <- makeLogConfig(LoggerConfiguration()).CreateLogger()
+  Log.Logger <-
+    makeLogConfig(LoggerConfiguration()).CreateLogger()
 
   let configureMarten: System.Action<StoreOptions> =
     System.Action<StoreOptions>
@@ -350,7 +370,9 @@ let main _ =
           sc,
           fun sp lc ->
             let enricher = sp.GetService<UserIdEnricher>()
-            (makeLogConfig lc).Enrich.With enricher |> ignore
+
+            (makeLogConfig lc).Enrich.With enricher
+            |> ignore
         ))
       .AddServices(fun _ sc ->
         MartenServiceCollectionExtensions

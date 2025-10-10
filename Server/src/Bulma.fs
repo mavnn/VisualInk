@@ -181,3 +181,8 @@ let delete attr =
 let footer attr content =
   _footer  (Attr.merge [_class_ "footer" ] attr) content
   
+let columns attr content =
+    _div (Attr.merge [_class_ "columns"] attr) content
+
+let column attr content =
+    _div (Attr.merge [_class_ "column"] attr) content

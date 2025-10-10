@@ -1,0 +1,1 @@
+Visual Ink ([https://visualink.mavnn.eu/](https://visualink.mavnn.eu/)) by mavnn di Michael Joshua Newton (EU VAT registration IT02380730560). You can read our [privacy policy here](/info/privacy) on the website, or contact us with questions at [michael@mavnn.eu](mailto:michael@mavnn.eu).

@@ -10,7 +10,7 @@ If you'd like to help _improve_ Visual Ink, you're in the right place!
 
 Visual Ink is designed for helping elementary/primary school age students try out creating Visual Novels. It uses the Ink narrative scripting language to let students write "scripts" for their visual novels, which they can then "run" as an interactive game:
 
-![Example screen shot](./example.png)
+![Example screen shot](./wwwroot/example.png)
 
 It adds a small number of features to the Ink language:
 

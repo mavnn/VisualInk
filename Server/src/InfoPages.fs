@@ -73,24 +73,22 @@ let private about viewContext =
 
 let footer =
   handler {
-    let! websiteAddress = Handler.createAbsoluteLink "/"
+    let! hostEnv = Handler.plug<IWebHostEnvironment> ()
+
+    let! markdown =
+      File.ReadAllTextAsync(
+        Path.Join(
+          hostEnv.ContentRootPath,
+          "content/infoPages/footer_text.md"
+        )
+      )
+      |> Handler.returnTask
+      |> Handler.map Markdown.ToHtml
 
     return
       B.content
         [ _class_ "has-text-centered" ]
-        [ _p
-            []
-            [ _text "VisualInk ("
-              _a
-                [ _href_ websiteAddress ]
-                [ _text websiteAddress ]
-              _text
-                ") by mavnn di Michael Joshua Newton (EU VAT registration IT02380730560). You can read our "
-              _a
-                [ _href_ "/info/privacy" ]
-                [ _text "privacy policy" ]
-              _text
-                " here on the website, or contact us with questions at michael@mavnn.eu." ] ]
+        [ _text markdown ]
       |> B.encloseAttr
         B.footer
         [ _id_ "footer"; _style_ "bottom: 0px;" ]
