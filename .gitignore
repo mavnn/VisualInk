@@ -1,0 +1,17 @@
+.direnv
+*.junit.xml
+result
+result-1
+keys/*
+nixos.qcow2
+obj
+bin
+#*
+local_services/pg/
+.DS_Store
+/wwwroot/assets/*/**
+!/wwwroot/assets/shared/**
+/wwwroot/assets/shared/**/.DS_Store
+node_modules
+private_*
+.env

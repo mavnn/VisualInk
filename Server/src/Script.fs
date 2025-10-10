@@ -1,0 +1,569 @@
+module VisualInk.Server.Script
+
+open Marten
+open Falco
+open Falco.Markup
+open Falco.Htmx
+open Prelude
+open Falco.Routing
+open View
+open System.Text.RegularExpressions
+open System.Text.Json.Serialization
+open Microsoft.AspNetCore.Hosting
+
+module B = Bulma
+
+[<JsonFSharpConverter>]
+type ScriptStats = { words: int; choices: int }
+
+[<JsonFSharpConverter>]
+type Script =
+  { id: System.Guid
+    ink: string
+    inkJson: string
+    stats: ScriptStats option
+    title: string }
+
+type CompilationResult =
+  | CompiledStory of Ink.Runtime.Story * ScriptStats option
+  | CompilationErrors of
+    (string * Ink.ErrorType) seq *
+    ScriptStats option
+
+let private compile title ink =
+  let errors =
+    new System.Collections.Generic.List<
+      string * Ink.ErrorType
+     >()
+
+  let errorHandler: Ink.ErrorHandler =
+    Ink.ErrorHandler(fun err t -> errors.Add(err, t))
+
+  let compiler =
+    new Ink.Compiler(
+      ink,
+      new Ink.Compiler.Options(
+        sourceFilename = title,
+        errorHandler = errorHandler
+      )
+    )
+
+  let parsed = compiler.Parse()
+  let story = compiler.Compile()
+
+  let stats =
+    Option.ofObj parsed
+    |> Option.map Ink.Stats.Generate
+    |> Option.map (fun s ->
+      { words = s.words; choices = s.choices })
+
+  if errors.Count > 0 then
+    CompilationErrors(errors, stats)
+  else
+    CompiledStory(story, stats)
+
+type ScriptTemplate = { title: string; ink: string }
+
+let private getTemplateList () =
+  handler {
+    let! hostEnvironment =
+      Handler.plug<IWebHostEnvironment> ()
+
+    let contentRootPath = hostEnvironment.WebRootPath
+
+    return
+      System.IO.Path.Join(
+        contentRootPath,
+        "assets",
+        "shared",
+        "templates"
+      )
+      |> fun path ->
+        System.IO.Directory.EnumerateFiles(path, "*.ink")
+        |> Seq.map
+          System.IO.Path.GetFileNameWithoutExtension
+        |> Seq.toList
+  }
+
+let private getTemplate title =
+  handler {
+    let! hostEnvironment =
+      Handler.plug<IWebHostEnvironment> ()
+
+    let contentRootPath = hostEnvironment.WebRootPath
+
+    let! content =
+      Handler.returnTask (
+        System.IO.File.ReadAllTextAsync(
+          System.IO.Path.Join(
+            contentRootPath,
+            "assets",
+            "shared",
+            "templates",
+            title + ".ink"
+          )
+        )
+      )
+
+    return { title = title; ink = content }
+  }
+
+
+let create (input: ScriptTemplate) =
+  handler {
+    let! documentStore = Handler.plug<IDocumentStore> ()
+    let! user = User.ensureSessionUser
+
+    use session =
+      documentStore.LightweightSession(user.id.ToString())
+
+    let id = System.Guid.NewGuid()
+    let story = compile input.title input.ink
+
+    match story with
+    | CompiledStory(story, stats) ->
+      let inkJson = story.ToJson()
+
+      let script =
+        { id = id
+          ink = input.ink
+          inkJson = inkJson
+          stats = stats
+          title = input.title }
+
+      session.Insert<Script> script
+      do! session.SaveChangesAsync() |> Handler.returnTask'
+      return script
+    // Save the actual script even if there are errors
+    // that will prevent it running
+    | CompilationErrors(_, stats) ->
+      let script =
+        { id = id
+          ink = input.ink
+          inkJson = "{}"
+          stats = stats
+          title = input.title }
+
+      session.Insert<Script> script
+      do! session.SaveChangesAsync() |> Handler.returnTask'
+      return script
+  }
+
+let save (script: Script) =
+  handler {
+    let! documentStore = Handler.plug<IDocumentStore> ()
+    let! user = User.ensureSessionUser
+
+    use session =
+      documentStore.LightweightSession(user.id.ToString())
+
+    session.Update<Script> script
+    do! session.SaveChangesAsync() |> Handler.returnTask'
+  }
+
+let load (guid: System.Guid) =
+  handler {
+    let! documentStore = Handler.plug<IDocumentStore> ()
+    let! user = User.ensureSessionUser
+
+    use session =
+      documentStore.QuerySession(user.id.ToString())
+
+    let! maybeScript =
+      session.LoadAsync<Script> guid |> Handler.returnTask
+
+    return Option.ofObj maybeScript
+  }
+
+let editor (existing: Script) =
+  handler {
+    let! token = Handler.getCsrfToken
+
+    return
+      _div
+        [ _id_ "editor" ]
+        [ B.form
+            token
+            [ _id_ "editor-form" ]
+            [ B.field (fun info ->
+                { info with
+                    label = Some "Title"
+                    input =
+                      [ _input
+                          [ _class_ "input"
+                            _type_ "text"
+                            _name_ "title"
+                            _id_ "story-title"
+                            _value_ existing.title
+                            _onkeyup_
+                              "document.getElementById('run-button').setAttribute('disabled', true);"
+                            _onblur_
+                              "fe.callLinter(fe.getEditor());"
+                            _placeholder_
+                              "Your script title" ] ] })
+              _div
+                [ _hidden_; _id_ "last-saved" ]
+                [ _text existing.ink ]
+              _div
+                [ _class_ "field" ]
+                [ _label
+                    [ _class_ "label" ]
+                    [ _text "The script" ]
+                  _div
+                    [ _id_ "codemirror"; _class_ "control" ]
+                    [ _script [] [ _text "fe.addEditor()" ] ] ]
+              _div
+                [ _class_
+                    "field is-grouped is-grouped-centered" ]
+                [ _div
+                    [ _class_ "control" ]
+                    [ _div
+                          [ _class_ "control" ]
+                          [ B.button
+                              [ _id_ "run-button"
+                                Hx.post "/playthrough/start"
+                                _disabled_
+                                _name_ "script"
+                                _class_ "is-primary"
+                                _value_ (existing.id.ToString()) ]
+                              [ _text "Run" ] ] ]
+                     ] ] ]
+      |> List.singleton
+  }
+
+let createGet viewContext =
+  handler {
+    let! template = viewContext.contextualTemplate
+    let! token = Handler.getCsrfToken
+    let! scriptTemplates = getTemplateList ()
+
+    let chooser =
+      B.form
+        token
+        []
+        [ B.select
+            {| selectAttrs = [ _name_ "template"
+                               Hx.trigger "input"
+                               Hx.post "/script/create" ]
+               wrapperAttrs = [] |}
+            (List.map
+              (fun st -> _option [] [ _text st ])
+              ("Pick a template:"::(scriptTemplates |> List.sort)))
+          ]
+
+    let html =
+      [
+        B.title [] "Choose a starting template to modify"
+        chooser
+      ]
+
+    return Response.ofHtml (template "Create script" html)
+  }
+  |> Handler.flatten
+  |> get "/script/create"
+
+let createPost =
+  handler {
+    let! input =
+      Handler.formDataOrFail
+        (Response.withStatusCode 400 >> Response.ofEmpty)
+        (fun data -> data.TryGetStringNonEmpty "template")
+
+    let! template = getTemplate input
+    let! script = create template
+
+    let! hxHeaders = Handler.fromCtx Request.getHtmxHeaders
+
+    match hxHeaders.HxRequest with
+    | Some "true" ->
+      return
+        Response.withHxRedirect
+          $"/script/{script.id.ToString()}"
+        >> Response.withHxReplaceUrl
+          $"/script/{script.id.ToString()}"
+        >> Response.withStatusCode 201
+        >> Response.ofEmpty
+    | _ ->
+      return
+        Response.redirectTemporarily
+          $"/script/{script.id.ToString()}"
+  }
+  |> Handler.flatten
+  |> post "/script/create"
+
+let editGet viewContext =
+  handler {
+    let! id =
+      Handler.fromCtx (
+        Request.getRoute >> fun d -> d.GetGuid "guid"
+      )
+
+    let! existing =
+      load id
+      |> Handler.ofOption (
+        Response.withStatusCode 404 >> Response.ofEmpty
+      )
+
+    let! view = editor existing
+    let! template = viewContext.contextualTemplate
+
+    let html = template "Edit Script" view
+
+    return Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> get "/script/{guid:guid}"
+
+let editPost viewContext =
+  handler {
+    let! id =
+      Handler.fromCtx (
+        Request.getRoute >> fun d -> d.GetGuid "guid"
+      )
+
+    let! input =
+      Handler.formDataOrFail
+        (Response.withStatusCode 400 >> Response.ofEmpty)
+        (fun data ->
+          Option.map2
+            (fun title ink ->
+              {| title = title; ink = ink |})
+            (data.TryGetStringNonEmpty "title")
+            (data.TryGetString "ink"))
+
+    let story = compile input.title input.ink
+
+    let inkJson, stats =
+      match story with
+      | CompiledStory(story, stats) -> story.ToJson(), stats
+      | CompilationErrors(_, stats) -> "{}", stats
+
+    let script =
+      { id = id
+        ink = input.ink
+        inkJson = inkJson
+        stats = stats
+        title = input.title }
+
+    do! save script
+
+    let! template = viewContext.contextualTemplate
+
+    let! view = editor script
+    let html = template "Edit Script" view
+
+    return! HxFragment "body" html
+  }
+  |> Handler.flatten
+  |> post "/script/{guid:guid}"
+
+let private listView scripts =
+  [ B.title [] "My scripts"
+    B.block
+      []
+      [ _a
+          [ _class_ "button is-fullwidth is-primary"
+            _href_ "/script/create" ]
+          [ _text "Start a new script!" ] ]
+    _table
+      [ _class_ "table is-fullwidth" ]
+      [ _thead
+          []
+          [ _tr
+              []
+              [ _th [] [ _text "Title" ]
+                _th [] [ _text "Words" ]
+                _th [] [ _text "Choices" ]
+                _th [] [ _text "Delete?" ]] ]
+        _tbody
+          []
+          (scripts
+           |> Seq.map (fun s ->
+             _tr
+               []
+               [ _td
+                   []
+                   [ _a
+                       [ _href_
+                           $"/script/{s.id.ToString()}" ]
+                       [ _text s.title ] ]
+                 _td
+                   []
+                   [ _text (
+                       s.stats
+                       |> Option.map (fun stats ->
+                         $"{stats.words}")
+                       |> Option.defaultValue "??"
+                     ) ]
+                 _td
+                   []
+                   [ _text (
+                       s.stats
+                       |> Option.map (fun stats ->
+                         $"{stats.choices}")
+                       |> Option.defaultValue "??"
+                     ) ]
+                 _td
+                   []
+                   [ B.delete [Hx.delete $"/script/{s.id.ToString()}"
+                               Hx.targetCss "#page"
+                               Hx.select "#page"
+                               Hx.confirm "Are you sure? There is no way to get the script back."] ]])
+           |> List.ofSeq) ] ]
+
+let listGet (viewContext: ViewContext) =
+  handler {
+    let! user = User.ensureSessionUser
+    let! documentStore = Handler.plug<IDocumentStore> ()
+
+    let session =
+      documentStore.QuerySession(user.id.ToString())
+
+    let! scripts =
+      session
+        .Query<Script>()
+        .OrderBySql("mt_last_modified desc")
+        .ToListAsync()
+      |> Handler.returnTask
+
+    let view = listView scripts
+    let! template = viewContext.contextualTemplate
+    let html = template "Scripts" view
+    return Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> get "/script"
+
+let editDelete viewContext =
+  handler {
+    let! id =
+      Handler.fromCtx (
+        Request.getRoute >> fun d -> d.GetGuid "guid"
+      )
+    let! user = User.ensureSessionUser
+    let! documentStore = Handler.plug<IDocumentStore> ()
+
+    let session =
+      documentStore.LightweightSession(user.id.ToString())
+
+    session.Delete<Script> id
+    do! session.SaveChangesAsync() |> Handler.returnTask'
+
+    let! scripts =
+      session
+        .Query<Script>()
+        .OrderBySql("mt_last_modified desc")
+        .ToListAsync()
+      |> Handler.returnTask
+
+    let view = listView scripts
+    let! template = viewContext.contextualTemplate
+    let html = template "Scripts" view
+    return Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> delete "/script/{guid:guid}"
+
+type LintResponseItem =
+  { line: int32
+    message: string
+    severity: string }
+
+let private inkToResponse
+  title
+  (error: string, t: Ink.ErrorType)
+  =
+  let lintMessageRegex =
+    Regex(
+      "[A-Z]+: '"
+      + Regex.Escape title
+      + "' line (\d+): (.*)",
+      RegexOptions.Compiled
+    )
+
+  let severity =
+    match t with
+    | Ink.ErrorType.Error -> "error"
+    | Ink.ErrorType.Warning -> "warning"
+    | _ -> "info"
+
+  let result = lintMessageRegex.Match error
+
+  if result.Success then
+    let line = result.Groups.[1].Value |> System.Int32.Parse
+    let message = result.Groups.[2].Value
+
+    { line = line
+      message = message
+      severity = severity }
+  else
+    { line = 1
+      message = error
+      severity = severity }
+
+let lintPost =
+  handler {
+    let! json =
+      Handler.fromCtxTask
+        Request.getJson<{| ink: string; title: string |}>
+
+    let! headers = Handler.fromCtx Request.getHeaders
+    let referrer = headers.GetString "Referer"
+
+    let compileResult = compile json.title json.ink
+
+    let inkJson, stats, response =
+      match compileResult with
+      | CompiledStory(story, stats) ->
+        story.ToJson(), stats, []
+      | CompilationErrors(errors, stats) ->
+        "{}",
+        stats,
+        errors
+        |> Seq.map (inkToResponse json.title)
+        |> Seq.toList
+
+    do!
+      if referrer.Length > 36 then
+        let id =
+          System.Guid(
+            referrer.Substring(referrer.Length - 36, 36)
+          )
+
+        let script =
+          { id = id
+            ink = json.ink
+            inkJson = inkJson
+            stats = stats
+            title = json.title }
+
+        save script
+      else
+        Handler.return' ()
+
+    return Response.ofJson response
+  }
+  |> Handler.flatten
+  |> post "/script/lint"
+
+let nav =
+  _a
+    [ _class_ "navbar-item"; _href_ "/script" ]
+    [ _text "Scripts" ]
+
+module Service =
+
+  let endpoints viewContext =
+    [ createGet viewContext
+      createPost
+      editGet viewContext
+      editPost viewContext
+      editDelete viewContext
+      listGet viewContext
+      lintPost ]
+
+  let addService: AddService =
+    fun _ sc ->
+      sc.ConfigureMarten(fun (storeOpts: StoreOptions) ->
+        storeOpts.Schema.For<Script>().MultiTenanted()
+        |> ignore)

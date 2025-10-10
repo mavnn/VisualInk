@@ -1,0 +1,60 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RuntimeIdentifiers>osx-arm64;linux-x64;linux-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!-- Source code -->
+  <ItemGroup>
+    <Compile Include="src\Prelude.fs" />
+    <Compile Include="src\Bulma.fs" />
+    <Compile Include="src\View.fs" />
+    <Compile Include="src\User.fs" />
+    <Compile Include="src\StoryAssets.fs" />
+    <Compile Include="src\Script.fs" />
+    <Compile Include="src\Playthrough.fs" />
+    <Compile Include="src\InfoPages.fs" />
+    <Compile Include="src\Program.fs" />
+  </ItemGroup>
+
+  <!-- Content files that are not web accessible,
+       but need to end up with binary when packaged -->
+  <Target Name="CopyContentFiles" AfterTargets="Publish">
+    <ItemGroup>
+      <ContentFiles Include="..\content\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ContentFiles)" DestinationFolder="$(PublishDir)\content\%(RecursiveDir)" />
+  </Target>
+
+  <!-- Package dependencies -->
+  <ItemGroup>
+    <PackageReference Include="Falco.Htmx" />
+    <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="Falco" />
+    <PackageReference Include="FSharp.SystemTextJson" />
+    <PackageReference Include="Google.Apis.Auth" />
+    <PackageReference Include="Markdig" />
+    <PackageReference Include="Marten" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+  </ItemGroup>
+
+  <!-- Manually managed dependencies (the Ink nuget packages are out of date,
+       these come from the Ink unity plugin) -->
+  <ItemGroup>
+    <Reference Include="ink-engine-runtime.dll">
+      <HintPath>../external/ink-engine-runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="ink_compiler.dll">
+      <HintPath>../external/ink_compiler.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+
+  <PropertyGroup>
+      <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+</Project>
