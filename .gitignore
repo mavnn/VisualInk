@@ -9,10 +9,12 @@ bin
 #*
 local_services/pg/
 .DS_Store
+/wwwroot/bundle.js
+/wwwroot/style.css
+/wwwroot/style.css.map
 /wwwroot/assets/*/**
 !/wwwroot/assets/shared/**
 /wwwroot/assets/shared/**/.DS_Store
 node_modules
 private_*
 .env
-bundle.js

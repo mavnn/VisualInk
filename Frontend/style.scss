@@ -1,0 +1,51 @@
+@use "bulma/sass" with (
+    $family-primary: 'charter, serif'
+);
+
+@font-face {
+  font-family: charter;
+  font-style: normal;
+  font-weight: normal;
+  font-stretch: normal;
+  src: url('/fonts/charter_regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: charter;
+  font-style: italic;
+  font-weight: normal;
+  font-stretch: normal;
+  src: url('/fonts/charter_italic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: charter;
+  font-style: normal;
+  font-weight: bold;
+  font-stretch: normal;
+  src: url('/fonts/charter_bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: charter;
+  font-style: italic;
+  font-weight: bold;
+  font-stretch: normal;
+  src: url('/fonts/charter_bold_italic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: source_code_pro;
+  font-style: regular;
+  font-weight: normal;
+  src: url('/fonts/SourceCodePro-Regular.otf.woff2') format('woff2');
+}
+
+html {
+  font-size: 2.0vw;
+}
+/** Make sure that while font size scales smoothly, it never gets
+ * too big or small.
+ */
+@media all and (min-width:1216px) { html { font-size: 22px; } }
+@media all and (max-width:768px) { html{ font-size: 18px; } }

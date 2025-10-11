@@ -139,7 +139,7 @@ let skeletalTemplate title content =
           _link
             [ _rel_ "stylesheet"
               _href_
-                "https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css" ]
+                "/style.css" ]
           _link
             [ _rel_ "stylesheet"
               _href_
@@ -336,7 +336,7 @@ type UserIdEnricher
 
 [<EntryPoint>]
 let main _ =
-  let makeLogConfig (lc: Serilog.LoggerConfiguration) =
+  let makeLogConfig (lc: LoggerConfiguration) =
     let logConfig =
       lc.MinimumLevel
         .Override(
@@ -422,7 +422,8 @@ let main _ =
         sc.Configure<FormOptions>
           (fun (opts: FormOptions) ->
             opts.BufferBody <- true
-            opts.MultipartBodyLengthLimit <- 268435456))
+            // 5mb file limit
+            opts.MultipartBodyLengthLimit <- 5L * 1024L * 1024L))
 
   builder
     .Build()

@@ -178,12 +178,19 @@ let private updateUser
 
 let private createUser (evt: UserEvent) =
   handler {
-    let! logger = Handler.plug<ILogger<UserRecord>>()
+    let! logger = Handler.plug<ILogger<UserRecord>> ()
+
     let source =
       match evt with
-      | Created { ExternalInfo = Some (GoogleInfo _) } -> "Google"
+      | Created { ExternalInfo = Some(GoogleInfo _) } ->
+        "Google"
       | _ -> "invite code"
-    logger.LogInformation ("New user created via {source}", source)
+
+    logger.LogInformation(
+      "New user created via {source}",
+      source
+    )
+
     let! documentStore =
       Handler.fromCtx (fun ctx ->
         ctx.Plug<IDocumentStore>())
@@ -191,15 +198,21 @@ let private createUser (evt: UserEvent) =
     let session = documentStore.LightweightSession()
 
     let result = session.Events.StartStream<UserRecord> evt
+
     do!
       Handler.returnTask (
         task { do! session.SaveChangesAsync() }
       )
 
-    logger.LogInformation ("User record for {id} stored", result.Id)
+    logger.LogInformation(
+      "User record for {id} stored",
+      result.Id
+    )
 
     return!
-      Handler.returnTask (session.LoadAsync<UserRecord> result.Id)
+      Handler.returnTask (
+        session.LoadAsync<UserRecord> result.Id
+      )
   }
 
 let getSessionUserFromCtx (ctx: HttpContext) =
@@ -327,7 +340,9 @@ let private userForm viewContext title input =
 
     let! token = Handler.getCsrfToken
     let! template = viewContext.contextualTemplate
-    let! redirectUri = Handler.createAbsoluteLink "/user/login"
+
+    let! redirectUri =
+      Handler.createAbsoluteLink "/user/login"
 
     return
       template
@@ -385,17 +400,18 @@ let private signIn authScheme principal url =
         })
 
     let! hxHeaders = Handler.fromCtx Request.getHtmxHeaders
+
     match hxHeaders.HxRequest with
     | Some "true" ->
-        do!
-          Handler.fromCtx (
-            Response.withHeaders [ "HX-Location", url ]
-            >> ignore
-          )
-        return Response.ofEmpty
+      do!
+        Handler.fromCtx (
+          Response.withHeaders [ "HX-Location", url ]
+          >> ignore
+        )
+
+      return Response.ofEmpty
     | Some _
-    | None ->
-        return Response.redirectTemporarily "/"
+    | None -> return Response.redirectTemporarily "/"
   }
 
 let private getLoginFormData
@@ -484,7 +500,7 @@ let private getLoginData location viewContext =
             let googleXsrfBody =
               f.TryGetStringNonEmpty "g_csrf_token"
 
-            let xsrfValid = 
+            let xsrfValid =
               googleXsrfCookie.IsSome
               && googleXsrfCookie = googleXsrfBody
             // let claimedClientId = f.TryGetStringNonEmpty "clientId"
@@ -597,7 +613,8 @@ let private loginViaForm loginData location viewContext =
         |> Handler.flatten
         |> Handler.failure
     | PasswordVerificationResult.Success ->
-      return! signIn "Cookies" (makePrincipal userRecord) "/"
+      return!
+        signIn "Cookies" (makePrincipal userRecord) "/"
     | PasswordVerificationResult.SuccessRehashNeeded ->
       let! _ =
         updateUser (
@@ -610,7 +627,8 @@ let private loginViaForm loginData location viewContext =
             ) ]
         )
 
-      return! signIn "Cookies" (makePrincipal userRecord) "/"
+      return!
+        signIn "Cookies" (makePrincipal userRecord) "/"
     | _ ->
       return
         failwithf
@@ -775,12 +793,13 @@ let navbarAccountView =
     match! getSessionUser with
     | Some user ->
       return
-        [ B.navbarItemSpan
+        [ B.navbarDropdown
             []
-            [ B.icon "account" []; _span' user.username ]
-          B.navbarItemA
-            [ _href_ "/user/logout" ]
-            [ _text "Logout" ] ]
+            {| link = user.username
+               dropdown =
+                [ B.navbarItemA
+                    [ _href_ "/user/logout" ]
+                    [ _text "Logout" ] ] |} ]
     | None ->
       return
         [ B.navbarItemA

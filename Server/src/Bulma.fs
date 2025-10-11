@@ -156,6 +156,14 @@ let navbarItemSpan attr content =
 let navbarItemA attr content =
   _a (Attr.merge [ _class_ "navbar-item" ] attr) content
 
+let navbarDivider = _hr [_class_ "navbar-divider"]
+
+let navbarDropdown attr (content: {| link: string; dropdown: XmlNode list |}) =
+    _div (Attr.merge [_class_ "navbar-item has-dropdown is-hoverable"] attr)  [
+      navbarItemA [] [_text content.link]
+      _div [_class_ "navbar-dropdown"] content.dropdown
+    ]
+
 module IconMods =
   let isLeft = "is-left"
   let isRight = "is-right"

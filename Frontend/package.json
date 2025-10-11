@@ -4,14 +4,18 @@
   "description": "Frontend JS for VisualInk",
   "main": "bin/Frontend.js",
   "scripts": {
-    "build": "rollup -c",
-    "watch": "rollup -cw --no-watch.clearScreen"
+    "build-js": "rollup -c",
+    "watch-js": "rollup -cw --no-watch.clearScreen",
+    "build-css": "sass --load-path=node_modules style.scss ../wwwroot/style.css",
+    "watch-css": "npm run build-css -- --watch"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^16.0.1",
-    "rollup": "^4.52.3"
+    "bulma": "^1.0.4",
+    "rollup": "^4.52.3",
+    "sass": "^1.93.2"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.19.0",
