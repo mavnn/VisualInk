@@ -27,21 +27,54 @@ async function callLinter(view) {
 
 const inkLinter = linter(callLinter)
 
-function inkCompletions(context) {
-  let word = context.matchBefore(/(\w*)|(\-+\w*)|(\#\w*)|(=*)/)
+function tildeCompletions(context) {
+  let word = context.matchBefore(/-(\w*)/)
   if ((!word || word.from == word.to) && !context.explicit)
     return null
   return {
     from: word.from,
     options: [
         {label: "---", type: "text", apply: "~", detail: "tilde"},
-        snippetCompletion('VAR ${name} = ${value}', { label: "VAR", detail: "Add a variable to your script" }),
         snippetCompletion('~speaker = "${name}"', { label: "-speaker", detail: "Change who is speaking" }),
         snippetCompletion('~scene = "${name}"', { label: "-scene", detail: "Change the background scene" }),
         snippetCompletion('~music = "${name}"', { label: "-music", detail: "Change the background music" }),
-        snippetCompletion('=== ${section} ===', { label: "===", detail: "Add a new named section to your script" }),
+    ]
+  }
+}
+
+function tagCompletions(context) {
+  let word = context.matchBefore(/\#\w*/)
+  if ((!word || word.from == word.to) && !context.explicit)
+    return null
+  return {
+    from: word.from,
+    options: [
         snippetCompletion('#vo', { label: "#vo" }),
         snippetCompletion('#emote ${name}', { label: "#emote" })
+    ]
+  }
+}
+
+function sectionCompletions(context) {
+  let word = context.matchBefore(/==+/)
+  if ((!word || word.from == word.to) && !context.explicit)
+    return null
+  return {
+    from: word.from,
+    options: [
+        snippetCompletion('=== ${section} ===', { label: "===", detail: "Add a new named section to your script" }),
+    ]
+  }
+}
+
+function inkCompletions(context) {
+  let word = context.matchBefore(/\w*/)
+  if ((!word || word.from == word.to) && !context.explicit)
+    return null
+  return {
+    from: word.from,
+    options: [
+        snippetCompletion('VAR ${name} = ${value}', { label: "VAR", detail: "Add a variable to your script" }),
     ]
   }
 }
@@ -61,7 +94,7 @@ function addEditor () {
         extensions: [basicSetup,
                      inkLinter,
                      lintGutter(),
-                     autocompletion({ override: [inkCompletions] }),
+                     autocompletion({ override: [tildeCompletions, tagCompletions, sectionCompletions, inkCompletions] }),
                      changeListener],
     });
 

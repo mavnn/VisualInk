@@ -12,6 +12,10 @@ open Falco.Security
 
 module B = Bulma
 
+let private assetGrid cells =
+    B.block []
+      [B.fixedGrid [_class_ "has-6-cols-widescreen has-4-cols-tablet has-1-cols-mobile"] cells]
+
 let private getAssestsDirectory =
   handler {
     let! user = User.ensureSessionUser
@@ -359,6 +363,7 @@ let private listSpeakers viewContext =
                                   [ _class_ "file-label" ]
                                   [ _input
                                       [ _class_ "file-input"
+                                        _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
                                         _type_ "file"
                                         _accept_ "image/*"
                                         _name_ "image" ]
@@ -371,7 +376,7 @@ let private listSpeakers viewContext =
                                           [ _text
                                               "Choose a file" ] ]
                                     _span
-                                      [ _class_ "file-name" ]
+                                      [ _class_ "file-name"; _id_ "file-name" ]
                                       [ _text
                                           "My image file" ] ] ] ]
                         B.field (fun info ->
@@ -389,9 +394,7 @@ let private listSpeakers viewContext =
                                         "/assets/speaker" ]
                                     [ _text
                                         "Create or Update" ] ] }) ] } ] ]
-        B.block
-          []
-          [ B.fixedGrid [ _class_ "has-auto-count" ] cells ] ]
+        assetGrid cells ]
 
     return
       speakers
@@ -479,6 +482,7 @@ let getSpeaker viewContext =
                               [ _class_ "file-label" ]
                               [ _input
                                   [ _class_ "file-input"
+                                    _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
                                     _type_ "file"
                                     _accept_ "image/*"
                                     _name_ "image" ]
@@ -490,7 +494,7 @@ let getSpeaker viewContext =
                                       [ _text
                                           "Choose a file" ] ]
                                 _span
-                                  [ _class_ "file-name" ]
+                                  [ _class_ "file-name"; _id_ "file-name" ]
                                   [ _text "My image file" ] ] ] ]
                     B.field (fun info ->
                       { info with
@@ -514,9 +518,7 @@ let getSpeaker viewContext =
           []
           [ B.title [] $"{speaker.name}'s emotes"
             yield! updateForm ]
-        B.block
-          []
-          [ B.fixedGrid [ _class_ "has-auto-count" ] cells ] ]
+        assetGrid cells ]
 
     return
       speaker.emotes
@@ -846,6 +848,7 @@ let private listScenes viewContext =
                                   [ _class_ "file-label" ]
                                   [ _input
                                       [ _class_ "file-input"
+                                        _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
                                         _type_ "file"
                                         _accept_ "image/*"
                                         _name_ "image" ]
@@ -858,7 +861,7 @@ let private listScenes viewContext =
                                           [ _text
                                               "Choose a file" ] ]
                                     _span
-                                      [ _class_ "file-name" ]
+                                      [ _class_ "file-name"; _id_ "file-name" ]
                                       [ _text
                                           "My image file" ] ] ] ]
                         B.field (fun info ->
@@ -876,9 +879,7 @@ let private listScenes viewContext =
                                         "/assets/scene" ]
                                     [ _text
                                         "Create or Update" ] ] }) ] } ] ]
-        B.block
-          []
-          [ B.fixedGrid [ _class_ "has-auto-count" ] cells ] ]
+        assetGrid cells ]
 
     return
       scenes
@@ -966,6 +967,7 @@ let getScene viewContext =
                               [ _class_ "file-label" ]
                               [ _input
                                   [ _class_ "file-input"
+                                    _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
                                     _type_ "file"
                                     _accept_ "image/*"
                                     _name_ "image" ]
@@ -977,7 +979,7 @@ let getScene viewContext =
                                       [ _text
                                           "Choose a file" ] ]
                                 _span
-                                  [ _class_ "file-name" ]
+                                  [ _class_ "file-name"; _id_ "file-name" ]
                                   [ _text "My image file" ] ] ] ]
                     B.field (fun info ->
                       { info with
@@ -1001,9 +1003,7 @@ let getScene viewContext =
           []
           [ B.title [] $"{scene.name}'s tags"
             yield! updateForm ]
-        B.block
-          []
-          [ B.fixedGrid [ _class_ "has-auto-count" ] cells ] ]
+        assetGrid cells ]
 
     return
       scene.tags
@@ -1224,6 +1224,7 @@ let private listMusic viewContext =
                                   [ _class_ "file-label" ]
                                   [ _input
                                       [ _class_ "file-input"
+                                        _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
                                         _type_ "file"
                                         _accept_ "audio/*"
                                         _name_ "audio" ]
@@ -1236,7 +1237,7 @@ let private listMusic viewContext =
                                           [ _text
                                               "Choose a file" ] ]
                                     _span
-                                      [ _class_ "file-name" ]
+                                      [ _class_ "file-name"; _id_ "file-name" ]
                                       [ _text
                                           "My music file" ] ] ] ]
                         B.field (fun info ->
@@ -1254,9 +1255,7 @@ let private listMusic viewContext =
                                         "/assets/music" ]
                                     [ _text
                                         "Create or Update" ] ] }) ] } ] ]
-        B.block
-          []
-          [ B.fixedGrid [ _class_ "has-auto-count" ] cells ] ]
+        assetGrid cells ]
 
     return
       music
