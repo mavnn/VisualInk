@@ -145,39 +145,7 @@ let skeletalTemplate title content =
               _href_
                 "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" ]
           _script [ _src_ "/bundle.js" ] []
-          _style
-            []
-            [ _text
-                "#codemirror { border-color: var(--bulma-input-border-color); border-radius: var(--bulma-input-radius); border-style: solid; border-width: var(--bulma-control-border-width); max-height: 100wh; overflow: clip; }\n"
-              _text
-                "#codemirror:focus-within {  border-color: hsl(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l)); box-shadow: var(--bulma-input-focus-shadow-size) hsla(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l),var(--bulma-input-focus-shadow-alpha)); }\n"
-              _text
-                ".cm-editor.cm-focused { outline: 0px; }\n"
-              _text
-                ".cm-editor > .cm-scroller { overflow: auto; font-family: var(--bulma-body-family); }\n"
-              _text
-                ".cm-editor > .cm-gutters { border-radius: var(--bulma-input-radius); }\n"
-              _text ".cm-editor { max-height: 70vh; }\n"
-              _text
-                "#navbar { border-bottom: 1px solid var(--bulma-primary); }\n"
-              _text "@keyframes fade-in { \n"
-              _text "  0% { opacity: 0; }\n"
-              _text "  100% { opacity: 100; }\n"
-              _text "}\n"
-              _text
-                ".fade-in { animation: 0.5s ease-in fade-in; }\n"
-              _text
-                ".fade-out { opacity: 0; transition: opacity 1s ease-out; }\n"
-              _text "@keyframes shake { \n"
-              _text "  0% { transform: translateX(2vw); }\n"
-              _text "  33% { transform: translateX(0); }\n"
-              _text
-                "  66% { transform: translateX(-2vw); }\n"
-              _text "  100% { transform: translateX(0); }\n"
-              _text "}\n"
-              _text
-                ".shake { animation: 0.1s ease-in-out 0.5s 5 shake; }\n"
-              _text ".hide { opacity: 0; }\n" ] ]
+           ]
       _body
         [ _id_ "body"; Hx.ext "morph"; Hx.boostOn ]
         [ _div

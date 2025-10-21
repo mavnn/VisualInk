@@ -105,11 +105,16 @@ function getEditor () {
     return editor;
 }
 
+function addText (text) {
+    let selection = editor.state.selection.main
+    editor.dispatch({ changes: [{from: selection.from, insert: text }] })
+}
+
 function requestFullscreenPlaythrough () {
     if (document.fullscreenElement === null) {
         document.documentElement.requestFullscreen();
     }
 }
 
-export { addEditor, getEditor, callLinter, requestFullscreenPlaythrough };
+export { addEditor, getEditor, callLinter, requestFullscreenPlaythrough, addText };
 

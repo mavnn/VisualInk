@@ -13,8 +13,12 @@ open Falco.Security
 module B = Bulma
 
 let private assetGrid cells =
-    B.block []
-      [B.fixedGrid [_class_ "has-6-cols-widescreen has-4-cols-tablet has-1-cols-mobile"] cells]
+  B.block
+    []
+    [ B.fixedGrid
+        [ _class_
+            "has-6-cols-widescreen has-4-cols-tablet has-1-cols-mobile" ]
+        cells ]
 
 let private getAssestsDirectory =
   handler {
@@ -67,11 +71,11 @@ type SpeakerImages =
     assetOwner: AssetOwner }
 
 let private fileFilter (file: string) =
-    Path.GetFileNameWithoutExtension file <> ""
-    && not (file.StartsWith ".")
+  Path.GetFileNameWithoutExtension file <> ""
+  && not (file.StartsWith ".")
 
 let private meaningfulFileFilter map files =
-    files |> Seq.filter (fun f -> fileFilter (map f))
+  files |> Seq.filter (fun f -> fileFilter (map f))
 
 let private getSpeakersDirectory =
   Handler.map
@@ -363,7 +367,8 @@ let private listSpeakers viewContext =
                                   [ _class_ "file-label" ]
                                   [ _input
                                       [ _class_ "file-input"
-                                        _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
+                                        _onchange_
+                                          "document.getElementById('file-name').innerHTML = this.files[0].name"
                                         _type_ "file"
                                         _accept_ "image/*"
                                         _name_ "image" ]
@@ -376,7 +381,8 @@ let private listSpeakers viewContext =
                                           [ _text
                                               "Choose a file" ] ]
                                     _span
-                                      [ _class_ "file-name"; _id_ "file-name" ]
+                                      [ _class_ "file-name"
+                                        _id_ "file-name" ]
                                       [ _text
                                           "My image file" ] ] ] ]
                         B.field (fun info ->
@@ -482,7 +488,8 @@ let getSpeaker viewContext =
                               [ _class_ "file-label" ]
                               [ _input
                                   [ _class_ "file-input"
-                                    _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
+                                    _onchange_
+                                      "document.getElementById('file-name').innerHTML = this.files[0].name"
                                     _type_ "file"
                                     _accept_ "image/*"
                                     _name_ "image" ]
@@ -494,7 +501,8 @@ let getSpeaker viewContext =
                                       [ _text
                                           "Choose a file" ] ]
                                 _span
-                                  [ _class_ "file-name"; _id_ "file-name" ]
+                                  [ _class_ "file-name"
+                                    _id_ "file-name" ]
                                   [ _text "My image file" ] ] ] ]
                     B.field (fun info ->
                       { info with
@@ -848,7 +856,8 @@ let private listScenes viewContext =
                                   [ _class_ "file-label" ]
                                   [ _input
                                       [ _class_ "file-input"
-                                        _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
+                                        _onchange_
+                                          "document.getElementById('file-name').innerHTML = this.files[0].name"
                                         _type_ "file"
                                         _accept_ "image/*"
                                         _name_ "image" ]
@@ -861,7 +870,8 @@ let private listScenes viewContext =
                                           [ _text
                                               "Choose a file" ] ]
                                     _span
-                                      [ _class_ "file-name"; _id_ "file-name" ]
+                                      [ _class_ "file-name"
+                                        _id_ "file-name" ]
                                       [ _text
                                           "My image file" ] ] ] ]
                         B.field (fun info ->
@@ -967,7 +977,8 @@ let getScene viewContext =
                               [ _class_ "file-label" ]
                               [ _input
                                   [ _class_ "file-input"
-                                    _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
+                                    _onchange_
+                                      "document.getElementById('file-name').innerHTML = this.files[0].name"
                                     _type_ "file"
                                     _accept_ "image/*"
                                     _name_ "image" ]
@@ -979,7 +990,8 @@ let getScene viewContext =
                                       [ _text
                                           "Choose a file" ] ]
                                 _span
-                                  [ _class_ "file-name"; _id_ "file-name" ]
+                                  [ _class_ "file-name"
+                                    _id_ "file-name" ]
                                   [ _text "My image file" ] ] ] ]
                     B.field (fun info ->
                       { info with
@@ -1224,7 +1236,8 @@ let private listMusic viewContext =
                                   [ _class_ "file-label" ]
                                   [ _input
                                       [ _class_ "file-input"
-                                        _onchange_ "document.getElementById('file-name').innerHTML = this.files[0].name"
+                                        _onchange_
+                                          "document.getElementById('file-name').innerHTML = this.files[0].name"
                                         _type_ "file"
                                         _accept_ "audio/*"
                                         _name_ "audio" ]
@@ -1237,7 +1250,8 @@ let private listMusic viewContext =
                                           [ _text
                                               "Choose a file" ] ]
                                     _span
-                                      [ _class_ "file-name"; _id_ "file-name" ]
+                                      [ _class_ "file-name"
+                                        _id_ "file-name" ]
                                       [ _text
                                           "My music file" ] ] ] ]
                         B.field (fun info ->

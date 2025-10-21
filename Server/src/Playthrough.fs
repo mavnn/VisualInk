@@ -11,6 +11,8 @@ open Prelude
 open Script
 open View
 
+module B = Bulma
+
 [<CLIMutable>]
 type Choice = { index: int32; text: string }
 
@@ -45,8 +47,6 @@ let getStep previousStep (story: Ink.Runtime.Story) =
   handler {
     let! logger =
       Handler.plug<ILogger<PlaythroughDocument>> ()
-
-    logger.LogInformation("Tags: {tags}", story.currentTags)
 
     let speakerVariable =
       story.variablesState.["speaker"] :?> string
@@ -384,7 +384,7 @@ let private makeMessageBox step =
     [ _div
         [ _class_ "container is-fluid" ]
         [ _div
-            [ _class_ "box content has-text-centered mt-3"
+            [ _class_ "box content has-text-centered mt-4"
               _style_
                 "background-color: color-mix(in oklab, var(--bulma-box-background-color), transparent 10%)"
               _id_ "content-story" ]
@@ -450,6 +450,17 @@ let makeBackgroundUnderlay step =
         []
   }
 
+let private closeButton step =
+  B.delete
+    [ _class_ "m-2 is-medium"
+      Hx.swapOuterHtml
+      Hx.select "#page"
+      Hx.targetCss "#page"
+      Hx.get $"/script/{step.scriptId.ToString()}"
+      Hx.pushUrlOn
+      _style_ "position: absolute; top: 0; right: 0; z-index: 200;"
+      _href_ $"/script/{step.scriptId.ToString()}" ]
+
 let currentView template guid steps =
   handler {
     let! audio = makeAudio steps
@@ -477,6 +488,7 @@ let currentView template guid steps =
               HxMorph.morphOuterHtml ]
             [ yield! audio
               yield! speakerImage
+              closeButton steps.currentStep
               continueOverlay
               backgroundUnderlay
               messageBox

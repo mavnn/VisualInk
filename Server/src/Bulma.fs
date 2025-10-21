@@ -74,10 +74,15 @@ let fieldHorizontal attr input =
 let input attr =
   _input (Attr.merge [ _class_ "input" ] attr)
 
-let select (attrs: {| selectAttrs: XmlAttribute list; wrapperAttrs: XmlAttribute list |}) content =
-    _div (Attr.merge [_class_ "select"] attrs.wrapperAttrs) [
-      _select attrs.selectAttrs content
-    ]
+let select
+  (attrs:
+    {| selectAttrs: XmlAttribute list
+       wrapperAttrs: XmlAttribute list |})
+  content
+  =
+  _div
+    (Attr.merge [ _class_ "select" ] attrs.wrapperAttrs)
+    [ _select attrs.selectAttrs content ]
 
 let button attr content =
   _button (Attr.merge [ _class_ "button" ] attr) content
@@ -156,13 +161,20 @@ let navbarItemSpan attr content =
 let navbarItemA attr content =
   _a (Attr.merge [ _class_ "navbar-item" ] attr) content
 
-let navbarDivider = _hr [_class_ "navbar-divider"]
+let navbarDivider = _hr [ _class_ "navbar-divider" ]
 
-let navbarDropdown attr (content: {| link: string; dropdown: XmlNode list |}) =
-    _div (Attr.merge [_class_ "navbar-item has-dropdown is-hoverable"] attr)  [
-      navbarItemA [] [_text content.link]
-      _div [_class_ "navbar-dropdown"] content.dropdown
-    ]
+let navbarDropdown
+  attr
+  (content:
+    {| link: string
+       dropdown: XmlNode list |})
+  =
+  _div
+    (Attr.merge
+      [ _class_ "navbar-item has-dropdown is-hoverable" ]
+      attr)
+    [ navbarItemA [] [ _text content.link ]
+      _div [ _class_ "navbar-dropdown" ] content.dropdown ]
 
 module IconMods =
   let isLeft = "is-left"
@@ -187,16 +199,64 @@ let delete attr =
   _div (Attr.merge [ _class_ "delete" ] attr) []
 
 let footer attr content =
-  _footer  (Attr.merge [_class_ "footer" ] attr) content
-  
+  _footer (Attr.merge [ _class_ "footer" ] attr) content
+
 let columns attr content =
-    _div (Attr.merge [_class_ "columns"] attr) content
+  _div (Attr.merge [ _class_ "columns" ] attr) content
 
 let column attr content =
-    _div (Attr.merge [_class_ "column"] attr) content
+  _div (Attr.merge [ _class_ "column" ] attr) content
 
 let notification attr content =
-    _div (Attr.merge [_class_ "notification"] attr) content
+  _div (Attr.merge [ _class_ "notification" ] attr) content
 
 let box attr content =
-    _div (Attr.merge [_class_ "box"] attr) content
+  _div (Attr.merge [ _class_ "box" ] attr) content
+
+type MenuLinkItem =
+  { attr: XmlAttribute list
+    text: string }
+
+type MenuSublistItem =
+  { sublabel: MenuLinkItem
+    items: MenuLinkItem list }
+
+type MenuItem =
+  | MenuLink of MenuLinkItem
+  | MenuSublist of MenuSublistItem
+
+  static member Node(item: MenuItem) =
+    match item with
+    | MenuLink linkItem ->
+      _text linkItem.text
+      |> encloseAttr _a linkItem.attr
+      |> enclose _li
+    | MenuSublist sublist ->
+      _li
+        []
+        [ MenuItem.Node(
+            MenuLink
+              { attr =
+                  Attr.merge
+                    [ _class_ "is-active" ]
+                    sublist.sublabel.attr
+                text = sublist.sublabel.text }
+          )
+          sublist.items
+          |> List.map (MenuLink >> MenuItem.Node)
+          |> _ul [] ]
+
+
+type MenuInput = { label: string; items: MenuItem list }
+
+let menu attr items =
+  _aside
+    (Attr.merge [ _class_ "menu" ] attr)
+    (items
+     |> List.collect (fun input ->
+       let itemNodes =
+         input.items |> List.map MenuItem.Node
+
+       [ _p [ _class_ "menu-label" ] [ _text input.label ]
+         if input.items.Length <> 0 then
+           yield! [ _ul [ _class_ "menu-list" ] itemNodes ] ]))

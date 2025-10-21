@@ -49,3 +49,38 @@ html {
  */
 @media all and (min-width:1216px) { html { font-size: 22px; } }
 @media all and (max-width:768px) { html{ font-size: 18px; } }
+
+#codemirror { border-color: var(--bulma-input-border-color); border-radius: var(--bulma-input-radius); border-style: solid; border-width: var(--bulma-control-border-width); overflow: clip; }
+#codemirror:focus-within {  border-color: hsl(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l)); box-shadow: var(--bulma-input-focus-shadow-size) hsla(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l),var(--bulma-input-focus-shadow-alpha)); }
+.cm-editor {
+    min-height: 50dvh;
+    height: 100%;
+}
+.cm-editor.cm-focused { outline: 0px; }
+.cm-editor > .cm-scroller {
+    overflow: auto;
+    font-family: var(--bulma-body-family);
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+.cm-editor > .cm-gutters {
+    border-radius: var(--bulma-input-radius);
+}
+#navbar { border-bottom: 1px solid var(--bulma-primary); }
+@keyframes fade-in { 
+  0% { opacity: 0; }
+  100% { opacity: 100; }
+}
+.fade-in { animation: 0.5s ease-in fade-in; }
+.fade-out { opacity: 0; transition: opacity 1s ease-out; }
+@keyframes shake { 
+  0% { transform: translateX(2vw); }
+  33% { transform: translateX(0); }
+  66% { transform: translateX(-2vw); }
+  100% { transform: translateX(0); }
+}
+.shake { animation: 0.1s ease-in-out 0.5s 5 shake; }
+.hide { opacity: 0; }

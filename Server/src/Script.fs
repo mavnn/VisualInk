@@ -51,6 +51,11 @@ let private compile title ink =
   let parsed = compiler.Parse()
   let story = compiler.Compile()
 
+  printfn
+    "vars %A"
+    (parsed.variableDeclarations.Keys
+     |> Seq.map (fun w -> w))
+
   let stats =
     Option.ofObj parsed
     |> Option.map Ink.Stats.Generate
@@ -179,55 +184,151 @@ let editor (existing: Script) =
   handler {
     let! token = Handler.getCsrfToken
 
+    let form =
+      B.form
+        token
+        [ _id_ "editor-form"; _class_ "is-flex is-flex-direction-column is-items-align-stretch"; _style_ "height: 100%;" ]
+        [ B.field (fun info ->
+            { info with
+                label = Some "Title"
+                field = [_class_ "is-flex-grow-0"]
+                input =
+                  [ _input
+                      [ _class_ "input"
+                        _type_ "text"
+                        _name_ "title"
+                        _id_ "story-title"
+                        _value_ existing.title
+                        _onkeyup_
+                          "document.getElementById('run-button').setAttribute('disabled', true);"
+                        _onblur_
+                          "fe.callLinter(fe.getEditor());"
+                        _placeholder_ "Your script title" ] ] })
+          _div
+            [ _hidden_; _id_ "last-saved" ]
+            [ _text existing.ink ]
+          _div
+            [ _class_ "field is-flex-grow-1 is-flex is-flex-direction-column is-items-align-stretch" ]
+            [ _label
+                [ _class_ "label" ]
+                [ _text "The script" ]
+              _div
+                [ _id_ "codemirror"; _class_ "control"; _style_ "height: 100%;" ]
+                [ _script [] [ _text "fe.addEditor()" ] ] ]
+          _div
+            [ _class_ "field is-grouped is-grouped-centered is-flex-grow-0" ]
+            [ _div
+                [ _class_ "control" ]
+                [ _div
+                    [ _class_ "control" ]
+                    [ B.button
+                        [ _id_ "run-button"
+                          Hx.post "/playthrough/start"
+                          _disabled_
+                          _name_ "script"
+                          _class_ "is-primary"
+                          _value_ (existing.id.ToString()) ]
+                        [ _text "Run" ] ] ] ] ]
+
+    let! speakers = StoryAssets.findSpeakers
+
+    let encode v =
+      v
+      |> System.Text.Json.JsonSerializer.Serialize
+      |> System.Net.WebUtility.HtmlEncode
+
+    let speakerMenu =
+      speakers
+      |> List.map (fun speaker ->
+        match speaker.emotes with
+        | [] ->
+          { B.MenuLinkItem.attr =
+              [ _class_ "is-active"
+                _onclick_
+                  $"fe.addText({encode speaker.name})" ]
+            B.MenuLinkItem.text = speaker.name }
+          |> B.MenuLink
+        | emotes ->
+          { B.MenuSublistItem.sublabel =
+              { B.MenuLinkItem.attr =
+                  [ _class_ "is-active"
+                    _onclick_
+                      $"fe.addText({encode speaker.name})" ]
+                B.MenuLinkItem.text = speaker.name }
+            B.MenuSublistItem.items =
+              emotes
+              |> List.map (fun e ->
+                { B.MenuLinkItem.attr =
+                    [ _onclick_
+                        $"fe.addText({encode e.emote})" ]
+                  B.MenuLinkItem.text = e.emote }) }
+          |> B.MenuSublist)
+      |> fun list ->
+          { B.MenuInput.label = "Speakers"
+            B.MenuInput.items = list }
+
+    let! scenes = StoryAssets.findScenes
+
+    let sceneMenu =
+      scenes
+      |> List.map (fun scene ->
+        match scene.tags with
+        | [] ->
+          { B.MenuLinkItem.attr =
+              [ _class_ "is-active"
+                _onclick_
+                  $"fe.addText({encode scene.name})" ]
+            B.MenuLinkItem.text = scene.name }
+          |> B.MenuLink
+        | tags ->
+          { B.MenuSublistItem.sublabel =
+              { B.MenuLinkItem.attr =
+                  [ _class_ "is-active"
+                    _onclick_
+                      $"fe.addText({encode scene.name})" ]
+                B.MenuLinkItem.text = scene.name }
+            B.MenuSublistItem.items =
+              tags
+              |> List.map (fun e ->
+                { B.MenuLinkItem.attr =
+                    [ _onclick_
+                        $"fe.addText({encode e.tag})" ]
+                  B.MenuLinkItem.text = e.tag }) }
+          |> B.MenuSublist)
+      |> fun list ->
+          { B.MenuInput.label = "Scenes"
+            B.MenuInput.items = list }
+
+    let! music = StoryAssets.findAllMusic
+
+    let musicMenu =
+      music
+      |> List.collect (fun piece ->
+        [ { B.MenuLinkItem.attr =
+              [ _class_ "is-active"
+                _onclick_
+                  $"fe.addText({encode piece.name})" ]
+            B.MenuLinkItem.text = piece.name }
+          |> B.MenuLink ])
+      |> fun list ->
+          { B.MenuInput.label = "Music"
+            B.MenuInput.items = list }
+
+    let sideBar =
+      B.menu
+        [ ]
+        [ speakerMenu; sceneMenu; musicMenu ]
+
     return
       _div
         [ _id_ "editor" ]
-        [ B.form
-            token
-            [ _id_ "editor-form" ]
-            [ B.field (fun info ->
-                { info with
-                    label = Some "Title"
-                    input =
-                      [ _input
-                          [ _class_ "input"
-                            _type_ "text"
-                            _name_ "title"
-                            _id_ "story-title"
-                            _value_ existing.title
-                            _onkeyup_
-                              "document.getElementById('run-button').setAttribute('disabled', true);"
-                            _onblur_
-                              "fe.callLinter(fe.getEditor());"
-                            _placeholder_
-                              "Your script title" ] ] })
-              _div
-                [ _hidden_; _id_ "last-saved" ]
-                [ _text existing.ink ]
-              _div
-                [ _class_ "field" ]
-                [ _label
-                    [ _class_ "label" ]
-                    [ _text "The script" ]
-                  _div
-                    [ _id_ "codemirror"; _class_ "control" ]
-                    [ _script [] [ _text "fe.addEditor()" ] ] ]
-              _div
-                [ _class_
-                    "field is-grouped is-grouped-centered" ]
-                [ _div
-                    [ _class_ "control" ]
-                    [ _div
-                          [ _class_ "control" ]
-                          [ B.button
-                              [ _id_ "run-button"
-                                Hx.post "/playthrough/start"
-                                _disabled_
-                                _name_ "script"
-                                _class_ "is-primary"
-                                _value_ (existing.id.ToString()) ]
-                              [ _text "Run" ] ] ]
-                     ] ] ]
+        [ B.columns
+            [ _style_ "max-height: 70dvh;"]
+            [ B.encloseAttr
+                B.column
+                [ _class_ "is-three-quarters"; _style_ "max-height: 70dvh;" ]
+                form
+              B.encloseAttr B.column [_style_ "overflow-y: auto; min-height: 50dvh;"] sideBar ] ]
       |> List.singleton
   }
 
@@ -242,20 +343,19 @@ let createGet viewContext =
         token
         []
         [ B.select
-            {| selectAttrs = [ _name_ "template"
-                               Hx.trigger "input"
-                               Hx.post "/script/create" ]
+            {| selectAttrs =
+                [ _name_ "template"
+                  Hx.trigger "input"
+                  Hx.post "/script/create" ]
                wrapperAttrs = [] |}
             (List.map
               (fun st -> _option [] [ _text st ])
-              ("Pick a template:"::(scriptTemplates |> List.sort)))
-          ]
+              ("Pick a template:"
+               :: (scriptTemplates |> List.sort))) ]
 
     let html =
-      [
-        B.title [] "Choose a starting template to modify"
-        chooser
-      ]
+      [ B.title [] "Choose a starting template to modify"
+        chooser ]
 
     return Response.ofHtml (template "Create script" html)
   }
@@ -374,7 +474,7 @@ let private listView scripts =
               [ _th [] [ _text "Title" ]
                 _th [] [ _text "Words" ]
                 _th [] [ _text "Choices" ]
-                _th [] [ _text "Delete?" ]] ]
+                _th [] [ _text "Delete?" ] ] ]
         _tbody
           []
           (scripts
@@ -405,10 +505,13 @@ let private listView scripts =
                      ) ]
                  _td
                    []
-                   [ B.delete [Hx.delete $"/script/{s.id.ToString()}"
-                               Hx.targetCss "#page"
-                               Hx.select "#page"
-                               Hx.confirm "Are you sure? There is no way to get the script back."] ]])
+                   [ B.delete
+                       [ Hx.delete
+                           $"/script/{s.id.ToString()}"
+                         Hx.targetCss "#page"
+                         Hx.select "#page"
+                         Hx.confirm
+                           "Are you sure? There is no way to get the script back." ] ] ])
            |> List.ofSeq) ] ]
 
 let listGet (viewContext: ViewContext) =
@@ -440,6 +543,7 @@ let editDelete viewContext =
       Handler.fromCtx (
         Request.getRoute >> fun d -> d.GetGuid "guid"
       )
+
     let! user = User.ensureSessionUser
     let! documentStore = Handler.plug<IDocumentStore> ()
 
