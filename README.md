@@ -4,11 +4,13 @@ Building visual novels with Ink from Inkle.
 
 If you just want to _use_ Visual Ink, you're probably best off going to [the official server](https://visualink.mavnn.eu/). You can log in freely with a Google account, or with an invite code using username and password. (Email michael@mavnn.eu if you'd like an invite).
 
+We're also running online courses with [Thinkers Meetup](https://www.thinkersmeetup.com/service-page/coding-games-with-a-story-ages-9-13), a long established and trusted provider of online courses for home educators and school enrichment.
+
 If you'd like to help _improve_ Visual Ink, you're in the right place!
 
 ## What is this project?
 
-Visual Ink is designed for helping elementary/primary school age students try out creating Visual Novels. It uses the Ink narrative scripting language to let students write "scripts" for their visual novels, which they can then "run" as an interactive game:
+Visual Ink is designed for helping elementary/primary to middle school age students try out creating Visual Novels. It uses the Ink narrative scripting language to let students write "scripts" for their visual novels, which they can then "run" as an interactive game:
 
 ![Example screen shot](./wwwroot/example.png)
 
