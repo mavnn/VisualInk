@@ -53,7 +53,6 @@ html {
 #codemirror { border-color: var(--bulma-input-border-color); border-radius: var(--bulma-input-radius); border-style: solid; border-width: var(--bulma-control-border-width); overflow: clip; }
 #codemirror:focus-within {  border-color: hsl(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l)); box-shadow: var(--bulma-input-focus-shadow-size) hsla(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l),var(--bulma-input-focus-shadow-alpha)); }
 .cm-editor {
-    min-height: 50dvh;
     height: 100%;
 }
 .cm-editor.cm-focused { outline: 0px; }

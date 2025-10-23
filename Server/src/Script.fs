@@ -354,6 +354,8 @@ let createGet viewContext =
             {| selectAttrs =
                 [ _name_ "template"
                   Hx.trigger "input"
+                  Hx.select "#page"
+                  Hx.targetCss "#page"
                   Hx.post "/script/create" ]
                wrapperAttrs = [] |}
             (List.map
@@ -386,7 +388,7 @@ let createPost viewContext =
     let html = template "Edit Script" view
 
     return
-      Response.withHxPushUrl $"/script/{id}"
+      Response.withHxPushUrl $"/script/{script.id}"
       >> Response.ofHtml html
   }
   |> Handler.flatten
