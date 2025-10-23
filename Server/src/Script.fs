@@ -51,11 +51,6 @@ let private compile title ink =
   let parsed = compiler.Parse()
   let story = compiler.Compile()
 
-  printfn
-    "vars %A"
-    (parsed.variableDeclarations.Keys
-     |> Seq.map (fun w -> w))
-
   let stats =
     Option.ofObj parsed
     |> Option.map Ink.Stats.Generate
@@ -187,11 +182,14 @@ let editor (existing: Script) =
     let form =
       B.form
         token
-        [ _id_ "editor-form"; _class_ "is-flex is-flex-direction-column is-items-align-stretch"; _style_ "height: 100%;" ]
+        [ _id_ "editor-form"
+          _class_
+            "is-flex is-flex-direction-column is-items-align-stretch"
+          _style_ "height: 100%;" ]
         [ B.field (fun info ->
             { info with
                 label = Some "Title"
-                field = [_class_ "is-flex-grow-0"]
+                field = [ _class_ "is-flex-grow-0" ]
                 input =
                   [ _input
                       [ _class_ "input"
@@ -208,15 +206,19 @@ let editor (existing: Script) =
             [ _hidden_; _id_ "last-saved" ]
             [ _text existing.ink ]
           _div
-            [ _class_ "field is-flex-grow-1 is-flex is-flex-direction-column is-items-align-stretch" ]
+            [ _class_
+                "field is-flex-grow-1 is-flex is-flex-direction-column is-items-align-stretch" ]
             [ _label
                 [ _class_ "label" ]
                 [ _text "The script" ]
               _div
-                [ _id_ "codemirror"; _class_ "control"; _style_ "height: 100%;" ]
+                [ _id_ "codemirror"
+                  _class_ "control"
+                  _style_ "height: 100%;" ]
                 [ _script [] [ _text "fe.addEditor()" ] ] ]
           _div
-            [ _class_ "field is-grouped is-grouped-centered is-flex-grow-0" ]
+            [ _class_
+                "field is-grouped is-grouped-centered is-flex-grow-0" ]
             [ _div
                 [ _class_ "control" ]
                 [ _div
@@ -224,6 +226,9 @@ let editor (existing: Script) =
                     [ B.button
                         [ _id_ "run-button"
                           Hx.post "/playthrough/start"
+                          HxMorph.morphOuterHtml
+                          Hx.select "#page"
+                          Hx.targetCss "#page"
                           _disabled_
                           _name_ "script"
                           _class_ "is-primary"
@@ -315,20 +320,23 @@ let editor (existing: Script) =
             B.MenuInput.items = list }
 
     let sideBar =
-      B.menu
-        [ ]
-        [ speakerMenu; sceneMenu; musicMenu ]
+      B.menu [] [ speakerMenu; sceneMenu; musicMenu ]
 
     return
       _div
         [ _id_ "editor" ]
         [ B.columns
-            [ _style_ "max-height: 70dvh;"]
+            [ _style_ "max-height: 70dvh;" ]
             [ B.encloseAttr
                 B.column
-                [ _class_ "is-three-quarters"; _style_ "max-height: 70dvh;" ]
+                [ _class_ "is-three-quarters"
+                  _style_ "max-height: 70dvh;" ]
                 form
-              B.encloseAttr B.column [_style_ "overflow-y: auto; min-height: 50dvh;"] sideBar ] ]
+              B.encloseAttr
+                B.column
+                [ _style_
+                    "overflow-y: auto; min-height: 50dvh;" ]
+                sideBar ] ]
       |> List.singleton
   }
 
@@ -362,31 +370,24 @@ let createGet viewContext =
   |> Handler.flatten
   |> get "/script/create"
 
-let createPost =
+let createPost viewContext =
   handler {
     let! input =
       Handler.formDataOrFail
         (Response.withStatusCode 400 >> Response.ofEmpty)
         (fun data -> data.TryGetStringNonEmpty "template")
 
-    let! template = getTemplate input
-    let! script = create template
+    let! scriptTemplate = getTemplate input
+    let! script = create scriptTemplate
 
-    let! hxHeaders = Handler.fromCtx Request.getHtmxHeaders
+    let! view = editor script
 
-    match hxHeaders.HxRequest with
-    | Some "true" ->
-      return
-        Response.withHxRedirect
-          $"/script/{script.id.ToString()}"
-        >> Response.withHxReplaceUrl
-          $"/script/{script.id.ToString()}"
-        >> Response.withStatusCode 201
-        >> Response.ofEmpty
-    | _ ->
-      return
-        Response.redirectTemporarily
-          $"/script/{script.id.ToString()}"
+    let! template = viewContext.contextualTemplate
+    let html = template "Edit Script" view
+
+    return
+      Response.withHxPushUrl $"/script/{id}"
+      >> Response.ofHtml html
   }
   |> Handler.flatten
   |> post "/script/create"
@@ -409,7 +410,9 @@ let editGet viewContext =
 
     let html = template "Edit Script" view
 
-    return Response.ofHtml html
+    return
+      Response.withHxPushUrl $"/script/{id}"
+      >> Response.ofHtml html
   }
   |> Handler.flatten
   |> get "/script/{guid:guid}"
@@ -659,7 +662,7 @@ module Service =
 
   let endpoints viewContext =
     [ createGet viewContext
-      createPost
+      createPost viewContext
       editGet viewContext
       editPost viewContext
       editDelete viewContext

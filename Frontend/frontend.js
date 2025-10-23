@@ -116,5 +116,22 @@ function requestFullscreenPlaythrough () {
     }
 }
 
-export { addEditor, getEditor, callLinter, requestFullscreenPlaythrough, addText };
+function stopMusic (audioElement) {
+    console.log("stopping music")
+    audioElement.pause();
+}
+
+function startMusic (audioElement) {
+    console.log("starting music")
+    audioElement.play();
+}
+
+htmx.onLoad(function () {
+    let audio = document.getElementById('audio-background-music')
+    if(audio) {
+        startMusic(audio)
+    }
+})
+
+export { addEditor, getEditor, callLinter, requestFullscreenPlaythrough, addText, stopMusic };
 

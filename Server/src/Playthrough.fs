@@ -280,21 +280,22 @@ let private makeAudio steps =
     let audioSrc =
       audio
       |> Option.map (fun a -> a.url)
-      |> Option.defaultValue ""
+      |> Option.defaultValue "/1-minute-of-silence.mp3"
 
     return
       [ _audio
           [ _id_ "audio-background-music"
             Attr.create
-              "hx::before-cleanup-element"
-              "this.pause()"
+              "hx-on::before-cleanup-element"
+              "fe.stopMusic(this)"
+            Attr.create
+              "hx-on::after-swap"
+              "fe.startMusic(this)"
+            Attr.create
+              "hx-on::after-process-node"
+              "fe.startMusic(this)"
             _loop_
-            yield!
-              if audioSrc = "" then
-                []
-              else
-                [ _src_ audioSrc ]
-            _autoplay_ ]
+            _src_ audioSrc ]
           [] ]
   }
 
@@ -457,9 +458,8 @@ let private closeButton step =
       Hx.select "#page"
       Hx.targetCss "#page"
       Hx.get $"/script/{step.scriptId.ToString()}"
-      Hx.pushUrlOn
-      _style_ "position: absolute; top: 0; right: 0; z-index: 200;"
-      _href_ $"/script/{step.scriptId.ToString()}" ]
+      _style_
+        "position: absolute; top: 0; right: 0; z-index: 200;" ]
 
 let currentView template guid steps =
   handler {
@@ -541,7 +541,7 @@ let stepPost viewContext =
   |> Handler.flatten
   |> post "playthrough/{guid:guid}"
 
-let startPost =
+let startPost viewContext =
   handler {
     let! scriptId =
       Handler.formDataOrFail
@@ -556,25 +556,26 @@ let startPost =
 
     let! id = start script
 
-    let! hxHeaders = Handler.fromCtx Request.getHtmxHeaders
+    let! step = load id
 
-    match hxHeaders.HxRequest with
-    | Some "true" ->
-      return
-        Response.withHxRedirect
-          $"/playthrough/{id.ToString()}"
-        >> Response.ofEmpty
-    | _ ->
-      return
-        Response.redirectTemporarily
-          $"/playthrough/{id.ToString()}"
+    let! html =
+      currentView
+        (viewContext.skeletalTemplate
+          step.currentStep.gameTitle)
+        id
+        step
+
+    return
+      Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> post "/playthrough/start"
 
 module Service =
   let endpoints viewContext =
-    [ stepGet viewContext; stepPost viewContext; startPost ]
+    [ stepGet viewContext
+      stepPost viewContext
+      startPost viewContext ]
 
   let addService: AddService =
     fun _ sc ->
