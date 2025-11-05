@@ -34,7 +34,7 @@ type GoogleInfo = { googleId: string }
 [<JsonFSharpConverter>]
 type ExternalProviderInfo = GoogleInfo of GoogleInfo
 
-[<JsonFSharpConverter>]
+[<JsonFSharpConverter(SkippableOptionFields = SkippableOptionFields.Always)>]
 type UserRecord =
   { Id: System.Guid
     Username: string
@@ -117,7 +117,7 @@ let private findUserRecordFrom (googleId: string) =
     let! user =
       session
         .Query<UserRecord>()
-        .Where(fun x -> x.State = Active)
+        .Where(fun x -> x.MatchesSql("data -> 'State' ->> 'Case' = ?", "Active"))
         .Where(fun x ->
           x.MatchesSql(
             "data -> 'ExternalInfo' ->> 'googleId' = ?",
@@ -145,7 +145,8 @@ let private findUserRecord (username: string) =
         session
           .Query<UserRecord>()
           .SingleOrDefaultAsync(fun ur ->
-            ur.Username = username && ur.State = Active)
+                ur.MatchesSql("data -> 'State' ->> 'Case' = ?", "Active")
+                    && ur.Username = username )
       )
   }
   |> Handler.map Option.ofObj

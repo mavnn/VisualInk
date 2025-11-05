@@ -42,6 +42,16 @@ let loadShared<'a, 'id, 'error when 'a: not struct and 'a: not null> (entityId: 
       |> Handler.map Option.ofObj
   }
   
+let load<'a, 'id, 'error when 'a: not struct and 'a: not null> (entityId: 'id): Handler<'a option, HttpHandler> =
+  handler {
+    let! docStore = getStore ()
+    let! user = User.ensureSessionUser()
+    let session = docStore.QuerySession(user.id.ToString())
+    return!
+      session.LoadAsync<'a> entityId
+      |> Handler.returnTask
+      |> Handler.map Option.ofObj
+  }
 
 let singleShared<'a, 'error when 'a: not struct and 'a: not null> logic: Handler<'a option, 'error> =
   handler {

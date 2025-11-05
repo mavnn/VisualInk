@@ -54,6 +54,7 @@ html {
 #codemirror:focus-within {  border-color: hsl(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l)); box-shadow: var(--bulma-input-focus-shadow-size) hsla(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l),var(--bulma-input-focus-shadow-alpha)); }
 .cm-editor {
     height: 100%;
+    min-height: 15rem;
 }
 .cm-editor.cm-focused { outline: 0px; }
 .cm-editor > .cm-scroller {

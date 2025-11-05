@@ -155,7 +155,7 @@ let save (script: Script) =
     do! DocStore.saveChanges session
   }
 
-let load (guid: System.Guid) = DocStore.loadShared<Script, System.Guid, _> guid
+let load (guid: System.Guid) = DocStore.load<Script, System.Guid, _> guid
 
 let editor (existing: Script) =
   handler {
