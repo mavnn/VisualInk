@@ -14,22 +14,21 @@ open Microsoft.AspNetCore.Hosting
        a computational expression, and some helpers for Htmx
 *)
 
-type Handler<'a> =
-  HttpContext -> Task<HttpContext * Result<'a, HttpHandler>>
+type Handler<'a, 'error> =
+  HttpContext -> Task<HttpContext * Result<'a, 'error>>
 
 module Handler =
 
-  let inline return' x : Handler<_> =
+  let inline return' x : Handler<_, 'error> =
     fun ctx -> Task.FromResult(ctx, Ok x)
 
-  let returnTask x : Handler<_> =
-    fun ctx ->
+  let returnTask x ctx =
       task {
         let! v = x
-        return ctx, Ok v
+        return! return' v ctx
       }
 
-  let returnTask' (x: Task) : Handler<_> =
+  let returnTask' (x: Task) : Handler<_, 'error> =
     fun ctx ->
       task {
         let! v = x
@@ -37,9 +36,9 @@ module Handler =
       }
 
   let inline bind
-    ([<InlineIfLambda>] f: 'a -> Handler<'b>)
-    ([<InlineIfLambda>] x: Handler<'a>)
-    : Handler<'b> =
+    ([<InlineIfLambda>] f: 'a -> Handler<'b, 'error>)
+    ([<InlineIfLambda>] x: Handler<'a, 'error>)
+    : Handler<'b, 'error> =
     fun ctx ->
       task {
         let! newCtx, soFar = x ctx
@@ -61,30 +60,30 @@ module Handler =
       xs
     |> map List.rev
 
-  let getCtx: Handler<HttpContext> =
-    fun ctx -> Task.FromResult(ctx, Ok ctx)
+  let getCtx (ctx : HttpContext) =
+    Task.FromResult(ctx, Ok ctx)
 
-  let updateCtx f : Handler<unit> =
+  let updateCtx f : Handler<unit, 'error> =
     fun ctx -> Task.FromResult(f ctx, Ok())
 
-  let fromCtx f : Handler<_> = getCtx |> bind (f >> return')
+  let fromCtx f : Handler<_, 'error> = getCtx |> map f
 
-  let fromCtxTask f : Handler<_> =
+  let fromCtxTask f : Handler<_, 'error> =
     getCtx |> bind (f >> returnTask)
 
-  let plug<'Interface> () : Handler<'Interface> =
+  let plug<'Interface, 'error>()  : Handler<'Interface, 'error> =
     fromCtx (fun ctx -> ctx.Plug<'Interface>())
 
-  let failure errHandler : Handler<_> =
+  let failure errHandler : Handler<_, 'error> =
     fun ctx -> Task.FromResult(ctx, Error errHandler)
 
-  let getCsrfToken
+  let getCsrfToken()
     : Handler<
-        Microsoft.AspNetCore.Antiforgery.AntiforgeryTokenSet
+        Microsoft.AspNetCore.Antiforgery.AntiforgeryTokenSet, _
        > =
     fromCtx Xsrf.getToken
 
-  let formDataOrFail onFailure mapForm : Handler<_> =
+  let formDataOrFail onFailure mapForm : Handler<_, _> =
     fromCtxTask Request.getFormSecure
     |> bind (fun maybeFormCollection ->
       match maybeFormCollection with
@@ -102,7 +101,7 @@ module Handler =
       | None -> failure onFailure)
 
   let flatten
-    (handler: Handler<HttpHandler>)
+    (handler: Handler<HttpHandler, HttpHandler>)
     : HttpHandler =
     fun ctx ->
       task {
@@ -111,16 +110,16 @@ module Handler =
         | ctx', Error failure -> return! failure ctx'
       }
 
-  let applyIn (f: Handler<'a -> 'b>) (v: 'a) =
+  let applyIn (f: Handler<'a -> 'b, _>) (v: 'a) =
     map (fun f' -> f' v) f
 
-  let tap f =
-      bind (fun v -> map (fun () -> v) (f v))
+  let tap f = bind (fun v -> map (fun () -> v) (f v))
 
   let getHrefForFilePath filePath =
-    plug<IWebHostEnvironment> ()
+    plug<IWebHostEnvironment, _> ()
     |> map (fun h ->
-      "/" + System.IO.Path.GetRelativePath(
+      "/"
+      + System.IO.Path.GetRelativePath(
         h.WebRootPath,
         filePath
       ))
@@ -128,61 +127,78 @@ module Handler =
   let createAbsoluteLink path =
     fromCtx (fun ctx ->
       let host = ctx.Request.Host.Value
-      let scheme = if host.StartsWith "localhost" then "http://" else "https://"
+
+      let scheme =
+        if host.StartsWith "localhost" then
+          "http://"
+        else
+          "https://"
+
       $"{scheme}{host}{path}")
 
 
 type HandlerBuilder() =
   member _.Return a = Handler.return' a
-  member _.ReturnFrom(a: Handler<_>) = a
+  member _.ReturnFrom(a: Handler<_, _>) = a
   member _.Yield a = Handler.return' a
   member _.Zero() = Handler.return' ()
   member inline _.Delay a = a
-  member inline _.Run a = a ()
+  member inline _.Run m = m()
 
   member _.Combine(m1, m2) =
-    m1 () |> Handler.bind (fun _ -> m2)
+    m1 |> Handler.bind (fun () -> m2 ())
 
   member this.While(guard, body) =
     if not (guard ()) then
       this.Zero()
     else
-      Handler.bind (fun () -> this.While(guard, body)) body
+      Handler.bind (fun () -> this.While(guard, body)) (body ())
 
   member _.TryFinally(body, compensation) =
-    try
-      body ()
-    finally
-      compensation ()
+    fun ctx ->
+      task {
+        try
+          return! body () ctx
+        finally
+          compensation ()
+      }
 
-  member this.Using(disposable: #System.IDisposable, body) =
-    this.TryFinally(
-      (fun () -> body disposable),
-      (fun () ->
-        match disposable with
-        | null -> ()
-        | disp -> disp.Dispose())
-    )
+  member _.TryWith(body: unit -> Handler<'a, _>, compensation): Handler<'a, _> =
+    fun (ctx : HttpContext) ->
+      task {
+        try
+          let! result = body () ctx
+          return result
+        with e ->
+          return! compensation e ctx
+      }
 
-  member this.For(sequence: seq<_>, body) =
-    this.Using(
-      sequence.GetEnumerator(),
-      fun enum ->
-        this.While(enum.MoveNext, body enum.Current)
-    )
+  member _.Using(disposable: #System.IDisposable, body) =
+    fun ctx ->
+        task {
+          try
+            return! body disposable ctx
+          finally
+            disposable.Dispose()
+        }
+
+  member this.For(sequence: seq<'a>, body: 'a -> Handler<_, _>): Handler<_, _> =
+    sequence
+    |> Seq.map (fun a -> body a)
+    |> Seq.reduce (fun m1 m2 -> this.Combine(m1, fun () -> m2 ))
 
   member inline _.Bind
-    (x: Handler<_>, [<InlineIfLambda>] f)
+    (x: Handler<_, _>, [<InlineIfLambda>] f)
     =
     Handler.bind f x
 
   [<CustomOperation("update_ctx")>]
   member this.UpdateCtx(soFar, f) =
-    this.Combine(soFar, Handler.updateCtx f)
+    this.Combine(soFar, fun () -> Handler.updateCtx f)
 
   [<CustomOperation("including")>]
-  member this.Including(soFar, included: Handler<unit>) =
-    this.Combine(soFar, included)
+  member this.Including(soFar, included: Handler<unit, _>) =
+    this.Combine(soFar, fun () -> included)
 
 let handler = HandlerBuilder()
 
@@ -192,7 +208,7 @@ let handler = HandlerBuilder()
             http context info
  *)
 type ContextualTemplate =
-  Handler<string -> Markup.XmlNode list -> Markup.XmlNode>
+  Handler<string -> Markup.XmlNode list -> Markup.XmlNode, HttpHandler>
 
 let HxFragment targetId template =
   handler {
@@ -222,3 +238,6 @@ type AddService =
   IConfiguration -> IServiceCollection -> IServiceCollection
 
 type ServiceEndpoints = string -> HttpEndpoint seq
+
+let serializeJson =
+  System.Text.Json.JsonSerializer.Serialize

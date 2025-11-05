@@ -11,6 +11,7 @@
     <Compile Include="src\Bulma.fs" />
     <Compile Include="src\View.fs" />
     <Compile Include="src\User.fs" />
+    <Compile Include="src\DocStore.fs" />
     <Compile Include="src\StoryAssets.fs" />
     <Compile Include="src\Script.fs" />
     <Compile Include="src\Playthrough.fs" />

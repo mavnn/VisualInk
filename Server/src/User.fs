@@ -29,14 +29,12 @@ type UserState =
   | Disabled
 
 [<JsonFSharpConverter>]
-[<CLIMutable>]
 type GoogleInfo = { googleId: string }
 
 [<JsonFSharpConverter>]
 type ExternalProviderInfo = GoogleInfo of GoogleInfo
 
 [<JsonFSharpConverter>]
-[<CLIMutable>]
 type UserRecord =
   { Id: System.Guid
     Username: string
@@ -119,6 +117,7 @@ let private findUserRecordFrom (googleId: string) =
     let! user =
       session
         .Query<UserRecord>()
+        .Where(fun x -> x.State = Active)
         .Where(fun x ->
           x.MatchesSql(
             "data -> 'ExternalInfo' ->> 'googleId' = ?",
@@ -146,7 +145,7 @@ let private findUserRecord (username: string) =
         session
           .Query<UserRecord>()
           .SingleOrDefaultAsync(fun ur ->
-            ur.Username = username)
+            ur.Username = username && ur.State = Active)
       )
   }
   |> Handler.map Option.ofObj
@@ -178,7 +177,7 @@ let private updateUser
 
 let private createUser (evt: UserEvent) =
   handler {
-    let! logger = Handler.plug<ILogger<UserRecord>> ()
+    let! logger = Handler.plug<ILogger<UserRecord>, _> ()
 
     let source =
       match evt with
@@ -230,11 +229,11 @@ let getSessionUserFromCtx (ctx: HttpContext) =
     | (true, id), username ->
       Some { id = id; username = username }
 
-let getSessionUser: Handler<User option> =
+let getSessionUser (): Handler<User option, _> =
   Handler.fromCtx getSessionUserFromCtx
 
-let ensureSessionUser: Handler<User> =
-  getSessionUser
+let ensureSessionUser (): Handler<User, HttpHandler> =
+  getSessionUser()
   |> Handler.bind (fun maybeUser ->
     match maybeUser with
     | Some user -> Handler.return' user
@@ -338,7 +337,7 @@ let private userForm viewContext title input =
                     _name_ "submit" ]
                   [ _text "Submit" ] ] })
 
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken()
     let! template = viewContext.contextualTemplate
 
     let! redirectUri =
@@ -788,9 +787,9 @@ let private signupPostEndpoint viewContext =
   |> Handler.flatten
   |> post "/user/signup"
 
-let navbarAccountView =
+let navbarAccountView() =
   handler {
-    match! getSessionUser with
+    match! getSessionUser() with
     | Some user ->
       return
         [ B.navbarDropdown

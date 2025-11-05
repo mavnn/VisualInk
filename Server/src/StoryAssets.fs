@@ -9,8 +9,40 @@ open Microsoft.AspNetCore.Hosting
 open Falco.Htmx
 open View
 open Falco.Security
+open System.Text.Json.Serialization
+open System.Linq
+open Microsoft.Extensions.Logging
+open Marten
+open Microsoft.Extensions.Hosting
 
 module B = Bulma
+
+let private urlEncode (str: string) =
+  System.Web.HttpUtility.UrlEncode str
+
+[<JsonFSharpConverter(BaseUnionEncoding = JsonUnionEncoding.UnwrapFieldlessTags)>]
+type AssetCategory =
+  | SpeakerAsset
+  | SceneAsset
+  | MusicAsset
+
+[<JsonFSharpConverter(BaseUnionEncoding = JsonUnionEncoding.UnwrapFieldlessTags)>]
+type AssetOwner =
+  | Shared
+  | UserOwned
+
+[<JsonFSharpConverter>]
+type SubAssetMetadata = { name: string; url: string }
+
+[<JsonFSharpConverter>]
+type AssetMetadata =
+  { [<Marten.Schema.Identity>]
+    name: string
+    owner: AssetOwner
+    category: AssetCategory
+    url: string
+    subAssets: SubAssetMetadata list }
+
 
 let private assetGrid cells =
   B.block
@@ -20,220 +52,252 @@ let private assetGrid cells =
             "has-6-cols-widescreen has-4-cols-tablet has-1-cols-mobile" ]
         cells ]
 
-let private getAssestsDirectory =
-  handler {
-    let! user = User.ensureSessionUser
+module private Queries =
+  open Marten
+  open Marten.Linq.MatchesSql
+  open JasperFx
 
-    let! hostEnvironment =
-      Handler.plug<IWebHostEnvironment> ()
+  let assetsByCategory (category: AssetCategory) =
+    handler {
+      let! user = User.ensureSessionUser ()
 
-    let contentRootPath = hostEnvironment.WebRootPath
-
-    return
-      System.IO.Path.Join(
-        contentRootPath,
-        "assets",
-        user.id.ToString()
-      )
-  }
-  |> Handler.tap (
-    Directory.CreateDirectory >> ignore >> Handler.return'
-  )
-
-let private getSharedAssestsDirectory =
-  handler {
-    let! hostEnvironment =
-      Handler.plug<IWebHostEnvironment> ()
-
-    let contentRootPath = hostEnvironment.WebRootPath
-
-    return
-      System.IO.Path.Join(
-        contentRootPath,
-        "assets",
-        "shared"
-      )
-  }
-  |> Handler.tap (
-    Directory.CreateDirectory >> ignore >> Handler.return'
-  )
-
-type AssetOwner =
-  | Shared
-  | UserOwned
-
-type SpeakerEmoteImage = { emote: string; url: string }
-
-type SpeakerImages =
-  { name: string
-    url: string
-    emotes: SpeakerEmoteImage list
-    assetOwner: AssetOwner }
-
-let private fileFilter (file: string) =
-  Path.GetFileNameWithoutExtension file <> ""
-  && not (file.StartsWith ".")
-
-let private meaningfulFileFilter map files =
-  files |> Seq.filter (fun f -> fileFilter (map f))
-
-let private getSpeakersDirectory =
-  Handler.map
-    (fun assets -> Path.Join(assets, "speakers"))
-    getAssestsDirectory
-  |> Handler.tap (
-    Directory.CreateDirectory >> ignore >> Handler.return'
-  )
-
-let private getSharedSpeakersDirectory =
-  Handler.map
-    (fun assets -> Path.Join(assets, "speakers"))
-    getSharedAssestsDirectory
-  |> Handler.tap (
-    Directory.CreateDirectory >> ignore >> Handler.return'
-  )
-
-let findSpeakers =
-  handler {
-    let! speakersDirectory = getSpeakersDirectory
-
-    let! sharedSpeakersDirectory =
-      getSharedSpeakersDirectory
-
-    let baseImages =
-      [ Directory.EnumerateFiles speakersDirectory
-        |> Seq.map (fun s -> s, UserOwned)
-        Directory.EnumerateFiles sharedSpeakersDirectory
-        |> Seq.map (fun s -> s, Shared) ]
-      |> Seq.concat
-      |> meaningfulFileFilter fst
-
-    return!
-      baseImages
-      |> Handler.collect (fun (baseImage, owner) ->
-        handler {
-          let name =
-            Path.GetFileNameWithoutExtension baseImage
-
-          let baseImagePath = baseImage
-
-          let emoteDir =
-            Path.Join(
-              Path.GetDirectoryName baseImagePath,
-              Path.GetFileNameWithoutExtension
-                baseImagePath
+      return!
+        DocStore.query<AssetMetadata> (fun q ->
+          q.Where(fun a ->
+            a.MatchesSql(
+              "data ->> 'category' = ?",
+              sprintf "%A" category
             )
+            && a.TenantIsOneOf(
+              user.id.ToString(),
+              StorageConstants.DefaultTenantId
+            )))
+    }
 
-          let! url =
-            Handler.getHrefForFilePath baseImagePath
+  let assetByName (name: string) (category: AssetCategory) =
+    DocStore.single<AssetMetadata> (fun q ->
+      q
+        .Where(fun a -> a.name = name)
+        .Where(fun a ->
+          a.MatchesSql(
+            "data ->> 'category' = ?",
+            sprintf "%A" category
+          )))
+    |> Handler.bind (fun a ->
+      match a with
+      | Some _ -> Handler.return' a
+      | None ->
+        DocStore.singleShared<AssetMetadata, _> (fun q ->
+          q
+            .Where(fun a -> a.name = name)
+            .Where(fun a ->
+              a.MatchesSql(
+                "data ->> 'category' = ?",
+                sprintf "%A" category
+              ))))
 
-          let! emotes =
-            if Directory.Exists emoteDir then
-              emoteDir
-              |> Directory.EnumerateFiles
-              |> meaningfulFileFilter id
-              |> Handler.collect (fun f ->
-                handler {
-                  let! emoteUrl =
-                    Handler.getHrefForFilePath f
+  // Call this when a url is removed from the assets metadata
+  // store so we can check if the file pointed at can be deleted.
+  let getRefCount url =
+    handler {
+      use! session = DocStore.startSharedSession ()
 
-                  return
-                    { emote =
-                        Path.GetFileNameWithoutExtension f
-                      url = emoteUrl }
-                })
-            else
-              Handler.return' []
+      return!
+        session
+          .Query<AssetMetadata>()
+          .Where(fun x -> x.AnyTenant())
+          .Where(fun x ->
+            x.url = url
+            || x.MatchesSql(
+              "exists (select true from jsonb_array_elements(data -> 'subAssets') x where x ->> 'url' = ?)",
+              url
+            ))
+          .CountAsync()
+        |> Handler.returnTask
+    }
 
-          return
-            { name = name
-              url = url
-              emotes = emotes
-              assetOwner = owner }
-        })
-      |> Handler.map (
-        List.sortByDescending (fun s -> s.assetOwner)
-        >> List.sortBy (fun s -> s.name)
-        >> List.distinctBy (fun s -> s.name)
-      )
-  }
+module private HashStore =
+  let private getHashAddressedDirectory webRootPath =
+    System.IO.Path.Join(webRootPath, "assets", "hash")
+    |> fun dir ->
+      Directory.CreateDirectory dir |> ignore
+      dir
 
-let findSpeaker name =
-  findSpeakers
-  |> Handler.map (List.filter (fun s -> s.name = name))
-  |> Handler.map
-    // Prefer the user's own image if there's a name
-    // clash with the public images to allow for user
-    // customization
-    (fun matching ->
-      match matching with
-      | onlyOne :: [] -> Some onlyOne
-      | [] -> None
-      | userOwned :: _
-      | _ :: userOwned :: _ when
-        userOwned.assetOwner = UserOwned
-        ->
-        Some userOwned
-      | shared :: _ -> Some shared)
+  let rawWriteHashAddressedAsset
+    (fileName: string)
+    (stream: Stream)
+    (logger: ILogger<_>)
+    webRootPath
+    =
+    task {
+      logger.LogInformation "Checking hash"
+      stream.Seek(0L, SeekOrigin.Begin) |> ignore
 
-let private postSpeaker =
+      let streamHash =
+        System.Security.Cryptography.SHA256.HashData stream
+
+      let extension = Path.GetExtension fileName
+
+      let hashAddressedDirectory =
+        getHashAddressedDirectory webRootPath
+
+      let address =
+        Path.Join(
+          hashAddressedDirectory,
+          System.Convert.ToHexStringLower streamHash
+          + extension
+        )
+
+      logger.LogInformation "Write if needed"
+      stream.Seek(0L, SeekOrigin.Begin) |> ignore
+
+      try
+        logger.LogInformation(
+          "Creating file for {hash}",
+          streamHash
+        )
+
+        use fileStream =
+          new FileStream(address, FileMode.CreateNew)
+
+        do! stream.CopyToAsync fileStream
+      with :? IOException as e ->
+        // This exception is thrown in with `FileMode.CreateNew`
+        // if the file already exists.
+        logger.LogWarning(
+          "Uploaded file didn't result in a new hash.\n{e}",
+          e
+        )
+
+      return address
+    }
+
+  let writeHashAddressedAsset
+    (fileName: string)
+    (stream: Stream)
+    =
+    handler {
+      let! logger =
+        Handler.plug<ILogger<AssetMetadata>, _> ()
+
+      let! webRootPath =
+        Handler.plug<IWebHostEnvironment, _> ()
+        |> Handler.map (fun host -> host.WebRootPath)
+
+      let! address =
+        rawWriteHashAddressedAsset
+          fileName
+          stream
+          logger
+          webRootPath
+        |> Handler.returnTask
+
+      return! Handler.getHrefForFilePath address
+    }
+
+  let garbageCollectHashStore url =
+    handler {
+      let! refCount = Queries.getRefCount url
+
+      let! webRootPath =
+        Handler.plug<IWebHostEnvironment, _> ()
+        |> Handler.map (fun host -> host.WebRootPath)
+
+      if refCount = 0 then
+        let filename = Path.GetFileName url
+
+        let directory =
+          getHashAddressedDirectory webRootPath
+
+        File.Delete(Path.Join(directory, filename))
+      else
+        ()
+    }
+
+let private insertNewMetadata
+  (file: Microsoft.AspNetCore.Http.IFormFile)
+  category
+  assetName
+  =
   handler {
-    let! speakersDirectory = getSpeakersDirectory
+    let! url =
+      HashStore.writeHashAddressedAsset
+        file.FileName
+        (file.OpenReadStream())
 
-    return!
-      Handler.formDataOrFail
-        (Response.withStatusCode 400 >> Response.ofEmpty)
-        (fun formData ->
-          let image = formData.TryGetFile "image"
-          let name = formData.TryGetString "name"
-          let emote = formData.TryGetStringNonEmpty "emote"
+    use! session = DocStore.startSession ()
 
-          match name, emote, image with
-          | Some name, Some e, Some image ->
-            let speakerDir =
-              Path.Join(speakersDirectory, name)
+    session.Insert<AssetMetadata>
+      { name = assetName
+        owner = UserOwned
+        subAssets = []
+        category = category
+        url = url }
 
-            Directory.CreateDirectory speakerDir |> ignore
-
-            let emoteFilename =
-              e + Path.GetExtension image.FileName
-
-            let fileName =
-              Path.Join(speakerDir, emoteFilename)
-
-            use fileStream =
-              new FileStream(fileName, FileMode.Create)
-
-            image.CopyTo fileStream
-
-            Response.withHxRedirect
-              $"/assets/speaker/{name}"
-            >> Response.ofEmpty
-            |> Some
-          | Some name, None, Some image ->
-
-            let fileName =
-              System.IO.Path.Join(
-                speakersDirectory,
-                name
-                + System.IO.Path.GetExtension
-                    image.FileName
-              )
-
-            use fileStream =
-              new FileStream(fileName, FileMode.Create)
-
-            image.CopyTo fileStream
-
-            Response.withHxRedirect "/assets/speaker"
-            >> Response.ofEmpty
-            |> Some
-          | _ -> None)
+    do! DocStore.saveChanges session
   }
-  |> Handler.flatten
-  |> post "/assets/speaker"
 
-let private deleteSpeaker =
+let private upsertMetadata
+  (file: Microsoft.AspNetCore.Http.IFormFile)
+  category
+  assetName
+  subAssetName
+  =
+  handler {
+    let! existing = Queries.assetByName assetName category
+
+    match existing, subAssetName with
+    | None, Some _ ->
+      // Can't update the subassets of an asset that doesn't exist
+      return!
+        Handler.failure (
+          Response.withStatusCode 400 >> Response.ofEmpty
+        )
+    | Some e, Some _ when e.owner = Shared ->
+      // Can't update the subassets of an asset that doesn't belong to you
+      return!
+        Handler.failure (
+          Response.withStatusCode 400 >> Response.ofEmpty
+        )
+    | Some e, Some sub ->
+      let! url =
+        HashStore.writeHashAddressedAsset
+          file.FileName
+          (file.OpenReadStream())
+
+      let replaced, rest =
+        e.subAssets
+        |> List.partition (fun sa -> sa.name = sub)
+
+      let updated =
+        { e with
+            subAssets = { name = sub; url = url } :: rest }
+
+      use! session = DocStore.startSession ()
+      session.Update<AssetMetadata> updated
+      do! DocStore.saveChanges session
+
+      match replaced with
+      | [ r ] -> do! HashStore.garbageCollectHashStore r.url
+      | _ -> ()
+    | None, None ->
+      do! insertNewMetadata file category assetName
+    | Some e, None when e.owner = Shared ->
+      do! insertNewMetadata file category assetName
+    | Some e, None ->
+      let! url =
+        HashStore.writeHashAddressedAsset
+          file.FileName
+          (file.OpenReadStream())
+
+      let updated = { e with url = url }
+      use! session = DocStore.startSession ()
+      session.Update<AssetMetadata> updated
+      do! DocStore.saveChanges session
+      do! HashStore.garbageCollectHashStore e.url
+  }
+
+let private deleteMetadata category =
   handler {
     let! hasValidToken =
       Handler.fromCtxTask Xsrf.validateToken
@@ -248,38 +312,31 @@ let private deleteSpeaker =
 
     let! path = Handler.fromCtx Request.getRoute
 
-    let! speaker =
-      findSpeaker (path.GetString "name")
+    let! existing =
+      Queries.assetByName (path.GetString "name") category
+      |> Handler.map (
+        Option.bind (fun s ->
+          match s.owner with
+          | UserOwned -> Some s
+          | Shared -> None)
+      )
       |> Handler.ofOption (
         Response.withStatusCode 400 >> Response.ofEmpty
       )
 
-    let! speakersDirectory = getSpeakersDirectory
+    use! session = DocStore.startSession ()
 
-    // We're deleting the whole speaker
-    let speakerDir =
-      Path.Join(speakersDirectory, speaker.name)
+    session.Delete<AssetMetadata> existing.name
 
-    let fileName =
-      System.IO.Path.Join(
-        speakersDirectory,
-        speaker.name + Path.GetExtension speaker.url
-      )
+    do! DocStore.saveChanges session
 
-    File.Delete fileName
-
-    do
-      if Directory.Exists speakerDir then
-        Directory.Delete(speakerDir, true)
-
-    return
-      Response.withHxRedirect "/assets/speaker"
-      >> Response.ofEmpty
+    for url in
+      existing.url
+      :: (existing.subAssets |> List.map (fun sa -> sa.url)) do
+      do! HashStore.garbageCollectHashStore url
   }
-  |> Handler.flatten
-  |> delete "/assets/speaker/{name}"
 
-let private deleteSpeakerEmote =
+let private deleteSubAsset subAssetName category =
   handler {
     let! hasValidToken =
       Handler.fromCtxTask Xsrf.validateToken
@@ -287,49 +344,217 @@ let private deleteSpeakerEmote =
     do!
       if not hasValidToken then
         Handler.failure (
-          Response.withStatusCode 400
-          >> Response.ofHtmlString "Invalid token"
-
+          Response.withStatusCode 400 >> Response.ofEmpty
         )
       else
         Handler.return' ()
 
     let! path = Handler.fromCtx Request.getRoute
-    let name = path.GetString "name"
-    let emote = path.GetString "emote"
 
-    let! speaker =
-      findSpeaker name
+    let! existing =
+      Queries.assetByName (path.GetString "name") category
+      |> Handler.map (
+        Option.bind (fun s ->
+          match s.owner with
+          | UserOwned -> Some s
+          | Shared -> None)
+      )
       |> Handler.ofOption (
-        Response.withStatusCode 400
-        >> Response.ofHtmlString
-          $"Didn't find speaker {name}"
+        Response.withStatusCode 400 >> Response.ofEmpty
       )
 
-    let! speakersDirectory = getSpeakersDirectory
-    // We're only deleting one emote
-    let speakerDir =
-      Path.Join(speakersDirectory, speaker.name)
+    let deleted, rest =
+      existing.subAssets
+      |> List.partition (fun sa -> sa.name = subAssetName)
 
-    let emoteFilename =
-      emote + Path.GetExtension speaker.url
+    let updated = { existing with subAssets = rest }
+    use! session = DocStore.startSession ()
+    session.Update<AssetMetadata> updated
+    do! DocStore.saveChanges session
 
-    let fileName = Path.Join(speakerDir, emoteFilename)
-    File.Delete fileName
+    match deleted with
+    | [ d ] -> do! HashStore.garbageCollectHashStore d.url
+    | _ -> ()
+  }
+
+type PreseedAssets
+  (
+    hostEnvironment: IWebHostEnvironment,
+    docStore: IDocumentStore,
+    logger: ILogger<PreseedAssets>
+  ) =
+  interface IHostedService with
+    member _.StopAsync _ = task { return () }
+
+    member _.StartAsync _ =
+      task {
+        let getAssestsDirectory () =
+          let contentRootPath = hostEnvironment.WebRootPath
+
+          Path.Join(contentRootPath, "assets")
+
+        let directoryToCategory (directory: string) =
+          match Path.GetFileName directory with
+          | "speakers" -> Some(SpeakerAsset, directory)
+          | "scenes" -> Some(SceneAsset, directory)
+          | "music" -> Some(MusicAsset, directory)
+          | _ -> None
+
+        let userDirectory dir =
+          Directory.EnumerateDirectories dir
+          |> Seq.choose directoryToCategory
+          |> Seq.collect (fun (category, dir) ->
+            Directory.EnumerateFiles dir
+            |> Seq.filter (fun f ->
+              Path.GetExtension f <> ""
+              && not (
+                (Path.GetFileName f).StartsWith "."
+              ))
+            |> Seq.map (fun f -> category, f))
+
+
+        let getHrefForFilePath filePath =
+            "/"
+            + Path.GetRelativePath(
+              hostEnvironment.WebRootPath,
+              filePath
+            )
+        let assetsDirectory = getAssestsDirectory ()
+        use session = docStore.LightweightSession()
+
+        for directory in
+          Directory.EnumerateDirectories assetsDirectory do
+
+          let owner =
+            if Path.GetFileName directory = "shared" then
+              Shared
+            else
+              UserOwned
+
+          let tenantId =
+            match owner with
+            | Shared ->
+              JasperFx.MultiTenancy.TenantId.DefaultTenantId
+            | UserOwned -> Path.GetFileName directory
+
+          let tenantSession = session.ForTenant tenantId
+
+          for category, file in userDirectory directory do
+            let name = Path.GetFileNameWithoutExtension file
+
+            let existing =
+              tenantSession
+                .Query<AssetMetadata>()
+                .Where(fun w -> w.name = name)
+                .FirstOrDefault()
+              |> Option.ofObj
+
+            match existing with
+            | Some _ -> ()
+            | None ->
+              use stream = File.OpenRead file
+
+              let address =
+                HashStore.rawWriteHashAddressedAsset
+                  file
+                  stream
+                  logger
+                  hostEnvironment.WebRootPath
+                |> Async.AwaitTask
+                |> Async.RunSynchronously
+                |> getHrefForFilePath
+
+              let subAssetsDir = Path.Join(Path.GetDirectoryName file, name)
+
+              let subAssets =
+                if Directory.Exists subAssetsDir then
+                  logger.LogInformation ("Sub asset directory {dir} found", subAssetsDir)
+                  Directory.EnumerateFiles subAssetsDir
+                  |> Seq.filter (fun f ->
+                    Path.GetExtension f <> ""
+                    && not (
+                        (Path.GetFileName f).StartsWith "."
+                    ))
+                  |> Seq.map (fun f ->
+                    use steam = File.OpenRead f
+
+                    let address =
+                      HashStore.rawWriteHashAddressedAsset
+                        f
+                        steam
+                        logger
+                        hostEnvironment.WebRootPath
+                      |> Async.AwaitTask
+                      |> Async.RunSynchronously
+                      |> getHrefForFilePath
+
+                    { name =
+                        Path.GetFileNameWithoutExtension f
+                      url = address })
+                  |> Seq.toList
+                else
+                  logger.LogInformation ("No sub asset directory {dir} found", subAssetsDir)
+                  []
+
+              tenantSession.Insert<AssetMetadata>
+                { name =
+                    Path.GetFileNameWithoutExtension file
+                  owner = owner
+                  subAssets = subAssets
+                  category = category
+                  url = address }
+
+        return! session.SaveChangesAsync()
+      }
+
+type SpeakerEmoteImage = { emote: string; url: string }
+
+type SpeakerImages =
+  { name: string
+    url: string
+    emotes: SpeakerEmoteImage list
+    assetOwner: AssetOwner }
+
+let findSpeakers () =
+  handler {
+    let! speakers =
+      Queries.assetsByCategory SpeakerAsset
+      |> Handler.map (
+        List.map (fun asset ->
+          { name = asset.name
+            url = asset.url
+            emotes =
+              asset.subAssets
+              |> List.map (fun sa ->
+                { emote = sa.name; url = sa.url })
+            assetOwner = asset.owner })
+      )
 
     return
-      Response.withHxRedirect
-        $"/assets/speaker/{speaker.name}"
-      >> Response.ofEmpty
+      speakers
+      |> List.sortByDescending (fun s -> s.assetOwner)
+      |> List.sortBy (fun s -> s.name)
+      |> List.distinctBy (fun s -> s.name)
   }
-  |> Handler.flatten
-  |> delete "/assets/speaker/{name}/{emote}"
 
-let private listSpeakers viewContext =
+let findSpeaker name =
+  Queries.assetByName name SpeakerAsset
+  |> Handler.map (
+    Option.map (fun asset ->
+      { name = asset.name
+        url = asset.url
+        emotes =
+          asset.subAssets
+          |> List.map (fun sa ->
+            { emote = sa.name; url = sa.url })
+        assetOwner = asset.owner })
+  )
+
+let private listSpeakersView viewContext =
   handler {
-    let! speakers = findSpeakers
+    let! speakers = findSpeakers ()
     let! template = viewContext.contextualTemplate
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken ()
 
     let page cells =
       [ B.block
@@ -432,21 +657,17 @@ let private listSpeakers viewContext =
             content = [ B.content [] [ _text s.name ] ] }
         |> B.encloseAttr
           _a
-          [ _href_ $"/assets/speaker/{s.name}" ]
+          [ _href_ $"/assets/speaker/{System.Uri.EscapeDataString s.name}" ]
         |> B.enclose B.cell)
       |> page
       |> template "Speakers"
       |> Response.ofHtml
   }
-  |> Handler.flatten
-  |> get "/assets/speaker"
 
-let getSpeaker viewContext =
+let getSpeakerView name viewContext =
   handler {
     let! template = viewContext.contextualTemplate
-    let! route = Handler.fromCtx Request.getRoute
-    let name = route.GetString "name"
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken ()
 
     let! speaker =
       findSpeaker name
@@ -528,6 +749,12 @@ let getSpeaker viewContext =
             yield! updateForm ]
         assetGrid cells ]
 
+    do!
+      Handler.updateCtx (
+        Response.withHxPushUrl
+          $"/assets/speaker/{urlEncode name}"
+      )
+
     return
       speaker.emotes
       |> List.map (fun s ->
@@ -549,7 +776,7 @@ let getSpeaker viewContext =
                           Hx.select "#body"
                           HxMorph.morphOuterHtml
                           Hx.delete
-                            $"/assets/speaker/{speaker.name}/{s.emote}"
+                            $"/assets/speaker/{urlEncode speaker.name}/{urlEncode s.emote}"
                           Hx.headers
                             [ token.HeaderName,
                               token.RequestToken ]
@@ -563,24 +790,80 @@ let getSpeaker viewContext =
       |> template $"{speaker.name} emotes"
       |> Response.ofHtml
   }
+
+let private postSpeaker =
+  handler {
+    let! formData =
+      Handler.formDataOrFail
+        (Response.withStatusCode 400 >> Response.ofEmpty)
+        (fun formData ->
+          let image = formData.TryGetFile "image"
+          let name = formData.TryGetString "name"
+          let emote = formData.TryGetStringNonEmpty "emote"
+
+          Option.map2
+            (fun image name ->
+              {| image = image
+                 name = name
+                 emote = emote |})
+            image
+            name)
+
+    do!
+      upsertMetadata
+        formData.image
+        SpeakerAsset
+        formData.name
+        formData.emote
+
+    let redirect =
+      match formData.emote with
+      | Some _ -> $"/assets/speaker/{System.Uri.EscapeDataString formData.name}"
+      | None -> "/assets/speaker"
+
+    return
+      Response.withHxRedirect redirect >> Response.ofEmpty
+  }
+  |> Handler.flatten
+  |> post "/assets/speaker"
+
+let private deleteSpeaker =
+  handler {
+    do! deleteMetadata SpeakerAsset
+
+    return
+      Response.withHxRedirect "/assets/speaker"
+      >> Response.ofEmpty
+  }
+  |> Handler.flatten
+  |> delete "/assets/speaker/{name}"
+
+let private deleteSpeakerEmote =
+  handler {
+    let! path = Handler.fromCtx Request.getRoute
+    let name = path.GetString "name"
+    do! deleteSubAsset (path.GetString "emote") SpeakerAsset
+
+    return
+      Response.withHxRedirect $"/assets/speaker/{System.Uri.EscapeDataString name}"
+      >> Response.ofEmpty
+  }
+  |> Handler.flatten
+  |> delete "/assets/speaker/{name}/{emote}"
+
+let private listSpeakers viewContext =
+  listSpeakersView viewContext
+  |> Handler.flatten
+  |> get "/assets/speaker"
+
+let getSpeaker viewContext =
+  handler {
+    let! route = Handler.fromCtx Request.getRoute
+    let name =  route.GetString "name"
+    return! getSpeakerView name viewContext
+  }
   |> Handler.flatten
   |> get "/assets/speaker/{name}"
-
-let private getScenesDirectory =
-  Handler.map
-    (fun assets -> Path.Join(assets, "scenes"))
-    getAssestsDirectory
-  |> Handler.tap (
-    Directory.CreateDirectory >> ignore >> Handler.return'
-  )
-
-let private getSharedScenesDirectory =
-  Handler.map
-    (fun assets -> Path.Join(assets, "scenes"))
-    getSharedAssestsDirectory
-  |> Handler.tap (
-    Directory.CreateDirectory >> ignore >> Handler.return'
-  )
 
 type SceneTagImage = { tag: string; url: string }
 
@@ -590,11 +873,33 @@ type SceneImages =
     tags: SceneTagImage list
     assetOwner: AssetOwner }
 
+  static member FromAssetMetadata x =
+    { tags =
+        x.subAssets
+        |> List.map (fun a -> { tag = a.name; url = a.url })
+      name = x.name
+      assetOwner = x.owner
+      url = x.url }
+
+let findScenes () =
+  handler {
+    let! scenes = Queries.assetsByCategory SceneAsset
+
+    return
+      scenes
+      |> List.map SceneImages.FromAssetMetadata
+      |> List.sortByDescending (fun s -> s.assetOwner)
+      |> List.sortBy (fun s -> s.name)
+      |> List.distinctBy (fun s -> s.name)
+  }
+
+let findScene name =
+  Queries.assetByName name SceneAsset
+  |> Handler.map (Option.map SceneImages.FromAssetMetadata)
+
 let private postScene =
   handler {
-    let! scenesDirectory = getScenesDirectory
-
-    return!
+    let! formData =
       Handler.formDataOrFail
         (Response.withStatusCode 400 >> Response.ofEmpty)
         (fun formData ->
@@ -602,168 +907,35 @@ let private postScene =
           let name = formData.TryGetString "name"
           let tag = formData.TryGetStringNonEmpty "tag"
 
-          match name, tag, image with
-          | Some name, Some e, Some image ->
-            let sceneDir = Path.Join(scenesDirectory, name)
+          Option.map2
+            (fun image name ->
+              {| image = image
+                 name = name
+                 tag = tag |})
+            image
+            name)
 
-            Directory.CreateDirectory sceneDir |> ignore
+    do!
+      upsertMetadata
+        formData.image
+        SceneAsset
+        formData.name
+        formData.tag
 
-            let emoteFilename =
-              e + Path.GetExtension image.FileName
+    let redirect =
+      match formData.tag with
+      | Some _ -> $"/assets/scene/{System.Uri.EscapeDataString formData.name}"
+      | None -> "/assets/scene"
 
-            let fileName =
-              Path.Join(sceneDir, emoteFilename)
-
-            use fileStream =
-              new FileStream(fileName, FileMode.Create)
-
-            image.CopyTo fileStream
-
-            Response.withHxRedirect $"/assets/scene/{name}"
-            >> Response.ofEmpty
-            |> Some
-          | Some name, None, Some image ->
-
-            let fileName =
-              System.IO.Path.Join(
-                scenesDirectory,
-                name
-                + System.IO.Path.GetExtension
-                    image.FileName
-              )
-
-            use fileStream =
-              new FileStream(fileName, FileMode.Create)
-
-            image.CopyTo fileStream
-
-            Response.withHxRedirect "/assets/scene"
-            >> Response.ofEmpty
-            |> Some
-          | _ -> None)
+    return
+      Response.withHxRedirect redirect >> Response.ofEmpty
   }
   |> Handler.flatten
   |> post "/assets/scene"
 
-let findScenes =
-  handler {
-    let! scenesDirectory = getScenesDirectory
-
-    let! sharedScenesDirectory = getSharedScenesDirectory
-
-    let baseImages =
-      [ Directory.EnumerateFiles scenesDirectory
-        |> Seq.map (fun s -> s, UserOwned)
-        Directory.EnumerateFiles sharedScenesDirectory
-        |> Seq.map (fun s -> s, Shared) ]
-      |> Seq.concat
-      |> meaningfulFileFilter fst
-
-    return!
-      baseImages
-      |> Handler.collect (fun (baseImage, owner) ->
-        handler {
-          let name =
-            Path.GetFileNameWithoutExtension baseImage
-
-          let baseImagePath = baseImage
-
-          let tagDir =
-            Path.Join(
-              Path.GetDirectoryName baseImagePath,
-              Path.GetFileNameWithoutExtension
-                baseImagePath
-            )
-
-          let! url =
-            Handler.getHrefForFilePath baseImagePath
-
-          let! tags =
-            if Directory.Exists tagDir then
-              tagDir
-              |> Directory.EnumerateFiles
-              |> meaningfulFileFilter id
-              |> Handler.collect (fun f ->
-                handler {
-                  let! tagUrl =
-                    Handler.getHrefForFilePath f
-
-                  return
-                    { tag =
-                        Path.GetFileNameWithoutExtension f
-                      url = tagUrl }
-                })
-            else
-              Handler.return' []
-
-          return
-            { name = name
-              url = url
-              tags = tags
-              assetOwner = owner }
-        })
-      |> Handler.map (
-        List.sortByDescending (fun s -> s.assetOwner)
-        >> List.sortBy (fun s -> s.name)
-        >> List.distinctBy (fun s -> s.name)
-      )
-  }
-
-let findScene name =
-  findScenes
-  |> Handler.map (List.filter (fun s -> s.name = name))
-  |> Handler.map
-    // Prefer the user's own image if there's a name
-    // clash with the public images to allow for user
-    // customization
-    (fun matching ->
-      match matching with
-      | onlyOne :: [] -> Some onlyOne
-      | [] -> None
-      | userOwned :: _
-      | _ :: userOwned :: _ when
-        userOwned.assetOwner = UserOwned
-        ->
-        Some userOwned
-      | shared :: _ -> Some shared)
-
 let private deleteScene =
   handler {
-    let! hasValidToken =
-      Handler.fromCtxTask Xsrf.validateToken
-
-    do!
-      if not hasValidToken then
-        Handler.failure (
-          Response.withStatusCode 400 >> Response.ofEmpty
-        )
-      else
-        Handler.return' ()
-
-    let! path = Handler.fromCtx Request.getRoute
-
-    let! scene =
-      findScene (path.GetString "name")
-      |> Handler.ofOption (
-        Response.withStatusCode 400 >> Response.ofEmpty
-      )
-
-    let! scenesDirectory = getScenesDirectory
-
-    // We're deleting the whole scene
-    let sceneDir = Path.Join(scenesDirectory, scene.name)
-
-    let fileName =
-      System.IO.Path.Join(
-        scenesDirectory,
-        scene.name + Path.GetExtension scene.url
-      )
-
-    File.Delete fileName
-
-    do
-      if Directory.Exists sceneDir then
-        Directory.Delete(sceneDir, true)
+    do! deleteMetadata SceneAsset
 
     return
       Response.withHxRedirect "/assets/scene"
@@ -774,41 +946,12 @@ let private deleteScene =
 
 let private deleteSceneTag =
   handler {
-    let! hasValidToken =
-      Handler.fromCtxTask Xsrf.validateToken
-
-    do!
-      if not hasValidToken then
-        Handler.failure (
-          Response.withStatusCode 400
-          >> Response.ofHtmlString "Invalid token"
-
-        )
-      else
-        Handler.return' ()
-
     let! path = Handler.fromCtx Request.getRoute
     let name = path.GetString "name"
-    let tag = path.GetString "tag"
-
-    let! scene =
-      findScene name
-      |> Handler.ofOption (
-        Response.withStatusCode 400
-        >> Response.ofHtmlString $"Didn't find scene {name}"
-      )
-
-    let! scenesDirectory = getScenesDirectory
-    // We're only deleting one tag
-    let sceneDir = Path.Join(scenesDirectory, scene.name)
-
-    let tagFilename = tag + Path.GetExtension scene.url
-
-    let fileName = Path.Join(sceneDir, tagFilename)
-    File.Delete fileName
+    do! deleteSubAsset (path.GetString "tag") SceneAsset
 
     return
-      Response.withHxRedirect $"/assets/scene/{scene.name}"
+      Response.withHxRedirect $"/assets/scene/{System.Uri.EscapeDataString name}"
       >> Response.ofEmpty
   }
   |> Handler.flatten
@@ -816,9 +959,9 @@ let private deleteSceneTag =
 
 let private listScenes viewContext =
   handler {
-    let! scenes = findScenes
+    let! scenes = findScenes ()
     let! template = viewContext.contextualTemplate
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken ()
 
     let page cells =
       [ B.block
@@ -935,7 +1078,7 @@ let getScene viewContext =
     let! template = viewContext.contextualTemplate
     let! route = Handler.fromCtx Request.getRoute
     let name = route.GetString "name"
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken ()
 
     let! scene =
       findScene name
@@ -1055,146 +1198,71 @@ let getScene viewContext =
   |> Handler.flatten
   |> get "/assets/scene/{name}"
 
-let private getMusicDirectory =
-  Handler.map
-    (fun assets -> Path.Join(assets, "music"))
-    getAssestsDirectory
-  |> Handler.tap (
-    Directory.CreateDirectory >> ignore >> Handler.return'
-  )
-
-let private getSharedMusicDirectory =
-  Handler.map
-    (fun assets -> Path.Join(assets, "music"))
-    getSharedAssestsDirectory
-  |> Handler.tap (
-    Directory.CreateDirectory >> ignore >> Handler.return'
-  )
-
 type Music =
   { name: string
     url: string
     assetOwner: AssetOwner }
 
+  static member ToAssetMetadata x =
+    { name = x.name
+      url = x.url
+      subAssets = []
+      category = MusicAsset
+      owner = x.assetOwner }
+
+  static member FromAssetMetadata x =
+    { assetOwner = x.owner
+      name = x.name
+      url = x.url }
+
+let findAllMusic () =
+  handler {
+    let! music = Queries.assetsByCategory MusicAsset
+
+    return
+      music
+      |> List.map Music.FromAssetMetadata
+      |> List.sortByDescending (fun s -> s.assetOwner)
+      |> List.sortBy (fun s -> s.name)
+      |> List.distinctBy (fun s -> s.name)
+  }
+
+let findMusic name =
+  Queries.assetByName name MusicAsset
+  |> Handler.map (Option.map Music.FromAssetMetadata)
+
 let private postMusic =
   handler {
-    let! musicDirectory = getMusicDirectory
-
-    return!
+    let! formData =
       Handler.formDataOrFail
         (Response.withStatusCode 400 >> Response.ofEmpty)
         (fun formData ->
           let music = formData.TryGetFile "audio"
           let name = formData.TryGetString "name"
 
-          match name, music with
-          | Some name, Some music ->
+          Option.map2
+            (fun music name ->
+              {| music = music; name = name |})
+            music
+            name)
 
-            let fileName =
-              System.IO.Path.Join(
-                musicDirectory,
-                name
-                + System.IO.Path.GetExtension
-                    music.FileName
-              )
+    do!
+      upsertMetadata
+        formData.music
+        MusicAsset
+        formData.name
+        None
 
-            use fileStream =
-              new FileStream(fileName, FileMode.Create)
-
-            music.CopyTo fileStream
-
-            Response.withHxRedirect "/assets/music"
-            >> Response.ofEmpty
-            |> Some
-          | _ -> None)
+    return
+      Response.withHxRedirect "/assets/music"
+      >> Response.ofEmpty
   }
   |> Handler.flatten
   |> post "/assets/music"
 
-let findAllMusic =
-  handler {
-    let! musicDirectory = getMusicDirectory
-
-    let! sharedMusicDirectory = getSharedMusicDirectory
-
-    let musicFiles =
-      [ Directory.EnumerateFiles musicDirectory
-        |> Seq.map (fun s -> s, UserOwned)
-        Directory.EnumerateFiles sharedMusicDirectory
-        |> Seq.map (fun s -> s, Shared) ]
-      |> Seq.concat
-      |> meaningfulFileFilter fst
-
-    return!
-      musicFiles
-      |> Handler.collect (fun (musicFile, owner) ->
-        handler {
-          let name =
-            Path.GetFileNameWithoutExtension musicFile
-
-          let! url = Handler.getHrefForFilePath musicFile
-
-
-          return
-            { name = name
-              url = url
-              assetOwner = owner }
-        })
-      |> Handler.map (
-        List.sortByDescending (fun s -> s.assetOwner)
-        >> List.sortBy (fun s -> s.name)
-        >> List.distinctBy (fun s -> s.name)
-      )
-  }
-
-let findMusic name =
-  findAllMusic
-  |> Handler.map (List.filter (fun s -> s.name = name))
-  |> Handler.map
-    // Prefer the user's own image if there's a name
-    // clash with the public images to allow for user
-    // customization
-    (fun matching ->
-      match matching with
-      | onlyOne :: [] -> Some onlyOne
-      | [] -> None
-      | userOwned :: _
-      | _ :: userOwned :: _ when
-        userOwned.assetOwner = UserOwned
-        ->
-        Some userOwned
-      | shared :: _ -> Some shared)
-
 let private deleteMusic =
   handler {
-    let! hasValidToken =
-      Handler.fromCtxTask Xsrf.validateToken
-
-    do!
-      if not hasValidToken then
-        Handler.failure (
-          Response.withStatusCode 400 >> Response.ofEmpty
-        )
-      else
-        Handler.return' ()
-
-    let! path = Handler.fromCtx Request.getRoute
-
-    let! music =
-      findMusic (path.GetString "name")
-      |> Handler.ofOption (
-        Response.withStatusCode 400 >> Response.ofEmpty
-      )
-
-    let! musicDirectory = getMusicDirectory
-
-    let fileName =
-      System.IO.Path.Join(
-        musicDirectory,
-        music.name + Path.GetExtension music.url
-      )
-
-    File.Delete fileName
+    do! deleteMetadata MusicAsset
 
     return
       Response.withHxRedirect "/assets/music"
@@ -1205,9 +1273,9 @@ let private deleteMusic =
 
 let private listMusic viewContext =
   handler {
-    let! music = findAllMusic
+    let! music = findAllMusic ()
     let! template = viewContext.contextualTemplate
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken ()
 
     let page cells =
       [ B.block
@@ -1330,6 +1398,9 @@ let musicNav =
   B.navbarItemA [ _href_ "/assets/music" ] [ _text "Music" ]
 
 module Service =
+  open Marten
+  open Microsoft.Extensions.DependencyInjection
+
   let endpoints viewContext =
     [ postSpeaker
       deleteSpeaker
@@ -1345,4 +1416,16 @@ module Service =
       postMusic
       listMusic viewContext ]
 
-  let addService = fun _ sc -> sc
+  let addService: AddService =
+    fun _ sc ->
+      sc
+        .AddSingleton<PreseedAssets>()
+        .AddHostedService(fun x ->
+          x.GetRequiredService<PreseedAssets>())
+      |> ignore
+
+      sc.ConfigureMarten(fun (storeOpts: StoreOptions) ->
+        storeOpts.Schema
+          .For<AssetMetadata>()
+          .MultiTenanted()
+        |> ignore)

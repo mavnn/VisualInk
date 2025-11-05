@@ -26,7 +26,7 @@ let private privacyNotice viewContext =
   handler {
     let! template = viewContext.contextualTemplate
 
-    let! hostEnv = Handler.plug<IWebHostEnvironment> ()
+    let! hostEnv = Handler.plug<IWebHostEnvironment, _> ()
 
     let! markdown =
       File.ReadAllTextAsync(
@@ -50,7 +50,7 @@ let private privacyNotice viewContext =
 let private about viewContext =
   handler {
     let! template = viewContext.contextualTemplate
-    let! hostEnv = Handler.plug<IWebHostEnvironment> ()
+    let! hostEnv = Handler.plug<IWebHostEnvironment, _> ()
 
     let! markdown =
       File.ReadAllTextAsync(
@@ -71,9 +71,9 @@ let private about viewContext =
   |> get "/info/about"
 
 
-let footer =
+let footer: Handler<XmlNode, HttpHandler> =
   handler {
-    let! hostEnv = Handler.plug<IWebHostEnvironment> ()
+    let! hostEnv = Handler.plug<IWebHostEnvironment, _> ()
 
     let! markdown =
       File.ReadAllTextAsync(

@@ -11,10 +11,10 @@ open Serilog.Formatting.Compact
 open Marten
 open VisualInk.Server
 open Prelude
-open System.Text.Json.Serialization
 open Serilog.Events
 open Microsoft.AspNetCore.Http.Features
 open Microsoft.AspNetCore.Http
+open Falco.Markup
 
 module B = Bulma
 
@@ -154,9 +154,9 @@ let skeletalTemplate title content =
               _style_ "min-height: 100vh;" ]
             content ] ]
 
-let makeNavbar =
+let makeNavbar: Handler<XmlNode, HttpHandler> =
   handler {
-    let! userView = User.navbarAccountView
+    let! userView = User.navbarAccountView()
 
     return
       B.navbar
@@ -226,7 +226,7 @@ let indexGet =
                         _text
                           " if it is your first time here." ]
                     _p'
-                      "After that, try the 'Scripts' button in the menu at the top, and create your first script. Or if you're in a class or club, I'm sure the person who's running it will have something ready for you!" ] ]
+                      "After that, try the 'Scripts' button in the menu at the top, and create a new script (the 'Getting started' template is a good way to get started). And if you're in a class or club, I'm sure the person who's running it will have something ready for you!" ] ]
             B.column
               [ _class_ "is-half" ]
               [
@@ -338,15 +338,7 @@ let main _ =
       (fun (storeOpts: StoreOptions) ->
         storeOpts.Connection connectionString
 
-        storeOpts.UseSystemTextJsonForSerialization(
-          configure =
-            fun opts ->
-              JsonFSharpOptions
-                .Default()
-                .WithSkippableOptionFields()
-                .AddToJsonSerializerOptions
-                opts
-        ))
+        storeOpts.UseSystemTextJsonForSerialization())
 
   let builder =
     WebApplication

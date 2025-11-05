@@ -45,9 +45,6 @@ type PlaythroughDocument =
 
 let getStep previousStep (story: Ink.Runtime.Story) =
   handler {
-    let! logger =
-      Handler.plug<ILogger<PlaythroughDocument>> ()
-
     let speakerVariable =
       story.variablesState.["speaker"] :?> string
 
@@ -108,7 +105,7 @@ let getStep previousStep (story: Ink.Runtime.Story) =
 let make script =
   handler {
     let! logger =
-      Handler.plug<ILogger<PlaythroughDocument>> ()
+      Handler.plug<ILogger<PlaythroughDocument>, _> ()
 
     let story = Ink.Runtime.Story script.inkJson
     story.add_onError (fun msg t -> logger.LogError(msg, t))
@@ -129,7 +126,7 @@ let make script =
   }
 
 let load (guid: System.Guid) =
-  Handler.plug<IDocumentStore> ()
+  Handler.plug<IDocumentStore, _> ()
   |> Handler.bind (fun docStore ->
     Handler.returnTask (
       docStore
@@ -141,7 +138,7 @@ let load (guid: System.Guid) =
 
 let cont (guid: System.Guid) choice =
   handler {
-    let! docStore = Handler.plug<IDocumentStore> ()
+    let! docStore = Handler.plug<IDocumentStore, _> ()
     let session = docStore.LightweightSession()
 
     let! doc =
@@ -196,7 +193,7 @@ let start script =
         animation = None
         stepCount = 0 }
 
-    let! documentStore = Handler.plug<IDocumentStore> ()
+    let! documentStore = Handler.plug<IDocumentStore, _> ()
     let session = documentStore.LightweightSession()
 
     session.Insert
@@ -365,7 +362,7 @@ let private makeSpeakerImage previous step =
 
 let private makeChoiceBox guid step =
   handler {
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken()
     let choiceMenu = makeChoiceMenu guid step token
 
     return
@@ -393,7 +390,7 @@ let private makeMessageBox step =
 
 let makeContinueOverlay guid step =
   handler {
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken()
 
     return
       if not step.finished && step.choices.Length = 0 then

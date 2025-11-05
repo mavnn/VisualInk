@@ -67,7 +67,7 @@ type ScriptTemplate = { title: string; ink: string }
 let private getTemplateList () =
   handler {
     let! hostEnvironment =
-      Handler.plug<IWebHostEnvironment> ()
+      Handler.plug<IWebHostEnvironment,_> ()
 
     let contentRootPath = hostEnvironment.WebRootPath
 
@@ -88,7 +88,7 @@ let private getTemplateList () =
 let private getTemplate title =
   handler {
     let! hostEnvironment =
-      Handler.plug<IWebHostEnvironment> ()
+      Handler.plug<IWebHostEnvironment,_> ()
 
     let contentRootPath = hostEnvironment.WebRootPath
 
@@ -111,11 +111,8 @@ let private getTemplate title =
 
 let create (input: ScriptTemplate) =
   handler {
-    let! documentStore = Handler.plug<IDocumentStore> ()
-    let! user = User.ensureSessionUser
-
-    use session =
-      documentStore.LightweightSession(user.id.ToString())
+    use! session =
+      DocStore.startSession()
 
     let id = System.Guid.NewGuid()
     let story = compile input.title input.ink
@@ -145,39 +142,24 @@ let create (input: ScriptTemplate) =
           title = input.title }
 
       session.Insert<Script> script
-      do! session.SaveChangesAsync() |> Handler.returnTask'
+      do! DocStore.saveChanges session
       return script
   }
 
 let save (script: Script) =
   handler {
-    let! documentStore = Handler.plug<IDocumentStore> ()
-    let! user = User.ensureSessionUser
-
-    use session =
-      documentStore.LightweightSession(user.id.ToString())
+    use! session =
+      DocStore.startSession()
 
     session.Update<Script> script
-    do! session.SaveChangesAsync() |> Handler.returnTask'
+    do! DocStore.saveChanges session
   }
 
-let load (guid: System.Guid) =
-  handler {
-    let! documentStore = Handler.plug<IDocumentStore> ()
-    let! user = User.ensureSessionUser
-
-    use session =
-      documentStore.QuerySession(user.id.ToString())
-
-    let! maybeScript =
-      session.LoadAsync<Script> guid |> Handler.returnTask
-
-    return Option.ofObj maybeScript
-  }
+let load (guid: System.Guid) = DocStore.loadShared<Script, System.Guid, _> guid
 
 let editor (existing: Script) =
   handler {
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken()
 
     let form =
       B.form
@@ -235,7 +217,7 @@ let editor (existing: Script) =
                           _value_ (existing.id.ToString()) ]
                         [ _text "Run" ] ] ] ] ]
 
-    let! speakers = StoryAssets.findSpeakers
+    let! speakers = StoryAssets.findSpeakers()
 
     let encode v =
       v
@@ -272,7 +254,7 @@ let editor (existing: Script) =
           { B.MenuInput.label = "Speakers"
             B.MenuInput.items = list }
 
-    let! scenes = StoryAssets.findScenes
+    let! scenes = StoryAssets.findScenes()
 
     let sceneMenu =
       scenes
@@ -304,7 +286,7 @@ let editor (existing: Script) =
           { B.MenuInput.label = "Scenes"
             B.MenuInput.items = list }
 
-    let! music = StoryAssets.findAllMusic
+    let! music = StoryAssets.findAllMusic()
 
     let musicMenu =
       music
@@ -343,7 +325,7 @@ let editor (existing: Script) =
 let createGet viewContext =
   handler {
     let! template = viewContext.contextualTemplate
-    let! token = Handler.getCsrfToken
+    let! token = Handler.getCsrfToken()
     let! scriptTemplates = getTemplateList ()
 
     let chooser =
@@ -521,8 +503,8 @@ let private listView scripts =
 
 let listGet (viewContext: ViewContext) =
   handler {
-    let! user = User.ensureSessionUser
-    let! documentStore = Handler.plug<IDocumentStore> ()
+    let! user = User.ensureSessionUser()
+    let! documentStore = Handler.plug<IDocumentStore, _> ()
 
     let session =
       documentStore.QuerySession(user.id.ToString())
@@ -549,8 +531,8 @@ let editDelete viewContext =
         Request.getRoute >> fun d -> d.GetGuid "guid"
       )
 
-    let! user = User.ensureSessionUser
-    let! documentStore = Handler.plug<IDocumentStore> ()
+    let! user = User.ensureSessionUser()
+    let! documentStore = Handler.plug<IDocumentStore, _> ()
 
     let session =
       documentStore.LightweightSession(user.id.ToString())

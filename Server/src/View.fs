@@ -7,6 +7,6 @@ open Falco.Markup
 type ViewContext =
   { skeletalTemplate: string -> XmlNode list -> XmlNode
     contextualTemplate: ContextualTemplate
-    navbar: Handler<XmlNode>
+    navbar: Handler<XmlNode, HttpHandler>
     notFound: HttpHandler
   }
