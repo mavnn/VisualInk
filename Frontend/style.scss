@@ -59,7 +59,7 @@ html {
 .cm-editor.cm-focused { outline: 0px; }
 .cm-editor > .cm-scroller {
     overflow: auto;
-    font-family: var(--bulma-body-family);
+    font-family: source_code_pro, sans-serif;
     position: absolute;
     top: 0;
     left: 0;

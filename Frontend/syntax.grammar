@@ -1,0 +1,28 @@
+@top Script { line* }
+
+line {
+  VariableLine |
+  VariableSetLine |
+  LineComment |
+  SectionLine |
+  Story
+}
+
+VariableLine { VariableDeclaration space* Identifier space* "=" space+ VariableValue }
+VariableSetLine { VariableSet Identifier space* "=" space+ VariableValue }
+SectionLine { SectionMarker space* Identifier space* SectionMarker "\n" }
+
+@tokens {
+  VariableDeclaration { "VAR" }
+  VariableSet { "~" }
+  VariableValue { ![ \t\n] ![\n]+ }
+  SectionMarker { "===" "="* }
+  Identifier { $[a-zA-Z_\-0-9]+ }
+  LineComment { "//" ![\n]* }
+  space { $[ \t]+ }
+  Story { "\n" | ![\n]+ }
+  "{" "}"
+  @precedence { SectionMarker, VariableDeclaration, VariableSet, LineComment, Story }
+}
+
+@detectDelim

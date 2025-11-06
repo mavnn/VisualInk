@@ -86,7 +86,6 @@ const changeListener = EditorView.updateListener.of((v) => {
     }
 })
 
-
 function addEditor () {
     let doc = htmx.find('#last-saved').textContent;
     editor = new EditorView({
