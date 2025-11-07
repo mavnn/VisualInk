@@ -1,0 +1,62 @@
+@top Script { expression* }
+
+@skip { spaces }
+
+@precedence { command @left, content @left, higher @left, lower @left }
+
+expression {
+  !command (VariableDeclaration | VariableAssignment | LineComment | Choice | Knot) |
+  !content (inline | eol)
+}
+
+inline {
+  !higher (Divert | tags) | !lower content
+}
+
+content {
+  word
+}
+
+Choice { ChoiceMarker (!higher inline | !lower eol)+ }
+Divert { DivertArrow (Target | eol | Divert) }
+Knot { knotMarker Target knotMarker? eol }
+tags { Tag+ eol }
+Tag { TagName TagValue? }
+VariableDeclaration { var Identifier "=" VarValue eol }
+VariableAssignment { tildeId "=" VarValue eol }
+@skip {} { tildeId { "~" Identifier } }
+@skip {} { LineComment { "//" commentValue } }
+
+@tokens {
+  var { "VAR" }
+  ChoiceMarker { (starChoice | plusChoice) }
+  starChoice { "*"+ }
+  plusChoice { "+"+ }
+  identifierChar { (identifierStartChar | @digit | $[-_]) }
+  identifierStartChar { @asciiLetter | $[\u{a1}-\u{10ffff}] }
+  word { ![#~{=\t\n\r ] ![ \t\n\r]+ }
+  TagName { "#" Identifier }
+  TagValue { ![#\n]+ }
+  VarValue { ![\n]+ }
+  commentValue { ![\n]+ }
+  eol { $[\n\r] }
+  knotMarker { "=" "="+ }
+  Identifier { identifierStartChar identifierChar+ }
+  Target { Identifier }
+  spaces { $[ \t] }
+  DivertArrow { "->" }
+  @precedence { spaces, TagValue }
+  @precedence { eol, TagValue }
+  @precedence { word, spaces }
+  @precedence { DivertArrow, word }
+  @precedence { eol, spaces }
+  @precedence { VarValue, spaces }
+  @precedence { var, word }
+  @precedence { "~", word }
+  @precedence { "//", word }
+  @precedence { ChoiceMarker, word }
+  "{"
+  "}"
+}
+
+@detectDelim

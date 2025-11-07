@@ -1,0 +1,2 @@
+~thing = hello
+other

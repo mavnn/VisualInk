@@ -3,32 +3,14 @@ import 'idiomorph/htmx';
 import { EditorView, basicSetup } from 'codemirror';
 import { linter, lintGutter } from '@codemirror/lint'
 import { CompletionContext, autocompletion, snippetCompletion } from "@codemirror/autocomplete"
-import { parser } from "./syntax.grammar"
-import { LRLanguage, LanguageSupport } from "@codemirror/language"
-import { styleTags, tags as t } from "@lezer/highlight"
-
-const InkLanguage = LRLanguage.define(
-        {
-                parser: parser.configure({
-                        props: [
-                                styleTags({
-                                        Identifier: t.className,
-                                        VariableDeclaration: t.keyword,
-                                        VariableValue: t.literal,
-                                        LineComment: t.comment,
-                                        SectionMarker: t.keyword,
-                                        "{ }": t.paren
-                                })
-                        ]
-                }), languageData: { commentTokens: { line: "//" } }
-        });
+import { InkLanguageSupport } from './lezer_ink'
 
 // @ts-ignore("Because we can!")
 window.htmx = htmx;
 
 let editor: EditorView | null = null;
 
-async function callLinter(view) {
+async function callLinter(view: EditorView) {
         let token = document.getElementById('editor')?.firstElementChild?.getAttribute('value')!;
         let title = (document.getElementById('story-title')! as HTMLInputElement).value;
         const response = await fetch('/script/lint',
@@ -50,12 +32,12 @@ async function callLinter(view) {
 
 const inkLinter = linter(callLinter)
 
-function tildeCompletions(context) {
+function tildeCompletions(context: CompletionContext) {
         let word = context.matchBefore(/-(\w*)/)
         if ((!word || word.from == word.to) && !context.explicit)
                 return null
         return {
-                from: word.from,
+                from: word?.from ?? context.pos,
                 options: [
                         { label: "---", type: "text", apply: "~", detail: "tilde" },
                         snippetCompletion('~speaker = "${name}"', { label: "-speaker", detail: "Change who is speaking" }),
@@ -65,12 +47,12 @@ function tildeCompletions(context) {
         }
 }
 
-function tagCompletions(context) {
+function tagCompletions(context: CompletionContext) {
         let word = context.matchBefore(/\#\w*/)
         if ((!word || word.from == word.to) && !context.explicit)
                 return null
         return {
-                from: word.from,
+                from: word?.from ?? context.pos,
                 options: [
                         snippetCompletion('#vo', { label: "#vo" }),
                         snippetCompletion('#emote ${name}', { label: "#emote" })
@@ -78,24 +60,24 @@ function tagCompletions(context) {
         }
 }
 
-function sectionCompletions(context) {
+function sectionCompletions(context: CompletionContext) {
         let word = context.matchBefore(/==+/)
         if ((!word || word.from == word.to) && !context.explicit)
                 return null
         return {
-                from: word.from,
+                from: word?.from ?? context.pos,
                 options: [
                         snippetCompletion('=== ${section} ===', { label: "===", detail: "Add a new named section to your script" }),
                 ]
         }
 }
 
-function inkCompletions(context) {
+function inkCompletions(context: CompletionContext) {
         let word = context.matchBefore(/\w*/)
         if ((!word || word.from == word.to) && !context.explicit)
                 return null
         return {
-                from: word.from,
+                from: word?.from ?? context.pos,
                 options: [
                         snippetCompletion('VAR ${name} = ${value}', { label: "VAR", detail: "Add a variable to your script" }),
                 ]
@@ -118,7 +100,7 @@ function addEditor() {
                         lintGutter(),
                         autocompletion({ override: [tildeCompletions, tagCompletions, sectionCompletions, inkCompletions] }),
                         changeListener,
-                        new LanguageSupport(InkLanguage)],
+                        InkLanguageSupport],
         });
 
         htmx.find('#codemirror')?.replaceChildren(editor.dom);

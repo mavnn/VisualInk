@@ -1,0 +1,1 @@
+Script(VariableDeclaration(Identifier, VarValue), Divert(DivertArrow, Target))
