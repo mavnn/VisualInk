@@ -35,7 +35,7 @@ export const InkLanguage = LRLanguage.define(
                                         Knot: t.keyword,
                                         Stitch: t.keyword,
                                         ChoiceMarker: t.keyword,
-                                        TagName: t.className,
+                                        Tag: t.className,
                                         TagValue: t.literal,
                                         DynamicTypeMarker: t.keyword,
                                         Pipe: t.keyword,
