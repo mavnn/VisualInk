@@ -2,47 +2,92 @@
 
 @skip { spaces }
 
-@precedence { command @left, content @left, higher @left, lower @left }
+@precedence { command @left, content @left, higher @left, lower @left, not @left, or @left, and @left }
 
 expression {
-  !command (VariableDeclaration | VariableAssignment | LineComment | Choice | Knot) |
-  !content (inline | eol)
+  !command (Todo | Include | VariableDeclaration | VariableAssignment | LineComment | Choice | Knot | Stitch | BlockComment) |
+  !content (inline+ | eol)
 }
 
 inline {
-  !higher (Divert | tags) | !lower content
+  Divert | tags | Dynamic | content
 }
 
 content {
-  word
+  (word | EscapedChar)
 }
 
-Choice { ChoiceMarker (!higher inline | !lower eol)+ }
+@skip {} { Todo { todo notEol* eol } }
+@skip {} { Include { include notEol* eol } }
+Choice { ChoiceMarker (!command Condition)* (!higher (Divert | tags) | !lower content) (!higher inline | !lower eol)+ }
 Divert { DivertArrow (Target | eol | Divert) }
 Knot { knotMarker Target knotMarker? eol }
+Stitch { stitchMarker Target eol }
 tags { Tag+ eol }
-Tag { TagName TagValue? }
+Tag { tagStart TagValue? }
 VariableDeclaration { var Identifier "=" VarValue eol }
 VariableAssignment { tildeId "=" VarValue eol }
 @skip {} { tildeId { "~" Identifier } }
 @skip {} { LineComment { "//" commentValue } }
 
+binaryConditions {
+  or { conditions !or OrOp conditions } |
+  and { conditions !and AndOp conditions }
+  // LessThan { conditions "<" conditions } |
+  // GreaterThan { conditions ">" conditions }
+}
+
+conditions {
+  binaryConditions |
+  Group { "(" conditions ")" } |
+  !not not { !not NotOp conditions } |
+  Target
+}
+
+Condition { "{" conditions "}" }
+
+inlineDynamic {
+  (!higher (Divert | Dynamic) | !lower word)+
+}
+
+Dynamic { "{" DynamicTypeMarker? Pipe* inlineDynamic (Pipe+ inlineDynamic)* "}" }
+
+@local tokens {
+  blockCommentEnd { "*/" }
+  @else blockCommentContent
+}
+
+@skip{} {
+  BlockComment { !command "/*" blockCommentContent blockCommentEnd }
+}
+
 @tokens {
+  Pipe { "|" }
   var { "VAR" }
+  todo { "TODO:" }
+  include { "INCLUDE" }
+  OrOp { ("or" | "||") }
+  AndOp { ("and" | "&&") }
+  NotOp { "not" }
+  DynamicTypeMarker { "!" | "~" | "&" }
   ChoiceMarker { (starChoice | plusChoice) }
   starChoice { "*"+ }
   plusChoice { "+"+ }
   identifierChar { (identifierStartChar | @digit | $[-_]) }
-  identifierStartChar { @asciiLetter | $[\u{a1}-\u{10ffff}] }
-  word { ![#~{=\t\n\r ] ![ \t\n\r]+ }
-  TagName { "#" Identifier }
+  identifierStartChar { @asciiLetter | $[\u0600-\u06FF\u0530-\u058F\u0400-\u04FF\u0370-\u03FF\u0590-\u05FF\u0100-\u017F\u0180-\u024F\u0080-\u00FF] }
+  word { ![\\#~{=\t\n\r|} ] ![ \t\n\r|{}]* }
+  TagName { Identifier }
+  tagStart { "#" TagName? }
   TagValue { ![#\n]+ }
   VarValue { ![\n]+ }
   commentValue { ![\n]+ }
   eol { $[\n\r] }
+  notEol { ![\n\r] }
+  EscapedChar { "\\" ![\n\r] }
   knotMarker { "=" "="+ }
+  stitchMarker { "=" }
   Identifier { identifierStartChar identifierChar+ }
-  Target { Identifier }
+  Target { Identifier ("." Identifier)* }
   spaces { $[ \t] }
   DivertArrow { "->" }
   @precedence { spaces, TagValue }
@@ -52,11 +97,17 @@ VariableAssignment { tildeId "=" VarValue eol }
   @precedence { eol, spaces }
   @precedence { VarValue, spaces }
   @precedence { var, word }
+  @precedence { todo, word }
+  @precedence { include, word }
   @precedence { "~", word }
   @precedence { "//", word }
   @precedence { ChoiceMarker, word }
-  "{"
-  "}"
+  @precedence { NotOp, Target }
+  @precedence { "/*", word }
+  @precedence { knotMarker, stitchMarker }
+  @precedence { "}", Pipe, word }
+  @precedence { DynamicTypeMarker, word }
+  "{" "}" "<" ">" "="
 }
 
 @detectDelim

@@ -23,10 +23,10 @@ module Handler =
     fun ctx -> Task.FromResult(ctx, Ok x)
 
   let returnTask x ctx =
-      task {
-        let! v = x
-        return! return' v ctx
-      }
+    task {
+      let! v = x
+      return! return' v ctx
+    }
 
   let returnTask' (x: Task) : Handler<_, 'error> =
     fun ctx ->
@@ -50,6 +50,15 @@ module Handler =
 
   let map f x = bind (fun v -> return' (f v)) x
 
+  let mapError f x =
+      fun (ctx : HttpContext) ->
+          task {
+            let! result = x ctx
+            match result with
+            | Error e -> return Error (f e)
+            | Ok v -> return Ok v
+          }
+
   let collect f xs =
     Seq.fold
       (fun acc next ->
@@ -60,7 +69,7 @@ module Handler =
       xs
     |> map List.rev
 
-  let getCtx (ctx : HttpContext) =
+  let getCtx (ctx: HttpContext) =
     Task.FromResult(ctx, Ok ctx)
 
   let updateCtx f : Handler<unit, 'error> =
@@ -71,16 +80,21 @@ module Handler =
   let fromCtxTask f : Handler<_, 'error> =
     getCtx |> bind (f >> returnTask)
 
-  let plug<'Interface, 'error>()  : Handler<'Interface, 'error> =
+  let plug<'Interface, 'error>
+    ()
+    : Handler<'Interface, 'error> =
     fromCtx (fun ctx -> ctx.Plug<'Interface>())
 
   let failure errHandler : Handler<_, 'error> =
     fun ctx -> Task.FromResult(ctx, Error errHandler)
 
-  let getCsrfToken()
+  let getCsrfToken
+    ()
     : Handler<
-        Microsoft.AspNetCore.Antiforgery.AntiforgeryTokenSet, _
-       > =
+        Microsoft.AspNetCore.Antiforgery.AntiforgeryTokenSet,
+        _
+       >
+    =
     fromCtx Xsrf.getToken
 
   let formDataOrFail onFailure mapForm : Handler<_, _> =
@@ -99,6 +113,17 @@ module Handler =
       match v with
       | Some v -> return' v
       | None -> failure onFailure)
+
+  let bindOption f handlerOption =
+    handlerOption
+    |> bind (fun opt ->
+      match opt with
+      | Some v -> f v
+      | None -> return' None)
+
+  let mapOption f handlerOption =
+      handlerOption
+      |> map (Option.map f)
 
   let flatten
     (handler: Handler<HttpHandler, HttpHandler>)
@@ -143,7 +168,7 @@ type HandlerBuilder() =
   member _.Yield a = Handler.return' a
   member _.Zero() = Handler.return' ()
   member inline _.Delay a = a
-  member inline _.Run m = m()
+  member inline _.Run m = m ()
 
   member _.Combine(m1, m2) =
     m1 |> Handler.bind (fun () -> m2 ())
@@ -152,7 +177,9 @@ type HandlerBuilder() =
     if not (guard ()) then
       this.Zero()
     else
-      Handler.bind (fun () -> this.While(guard, body)) (body ())
+      Handler.bind
+        (fun () -> this.While(guard, body))
+        (body ())
 
   member _.TryFinally(body, compensation) =
     fun ctx ->
@@ -163,8 +190,10 @@ type HandlerBuilder() =
           compensation ()
       }
 
-  member _.TryWith(body: unit -> Handler<'a, _>, compensation): Handler<'a, _> =
-    fun (ctx : HttpContext) ->
+  member _.TryWith
+    (body: unit -> Handler<'a, _>, compensation)
+    : Handler<'a, _> =
+    fun (ctx: HttpContext) ->
       task {
         try
           let! result = body () ctx
@@ -175,17 +204,20 @@ type HandlerBuilder() =
 
   member _.Using(disposable: #System.IDisposable, body) =
     fun ctx ->
-        task {
-          try
-            return! body disposable ctx
-          finally
-            disposable.Dispose()
-        }
+      task {
+        try
+          return! body disposable ctx
+        finally
+          disposable.Dispose()
+      }
 
-  member this.For(sequence: seq<'a>, body: 'a -> Handler<_, _>): Handler<_, _> =
+  member this.For
+    (sequence: seq<'a>, body: 'a -> Handler<_, _>)
+    : Handler<_, _> =
     sequence
     |> Seq.map (fun a -> body a)
-    |> Seq.reduce (fun m1 m2 -> this.Combine(m1, fun () -> m2 ))
+    |> Seq.reduce (fun m1 m2 ->
+      this.Combine(m1, fun () -> m2))
 
   member inline _.Bind
     (x: Handler<_, _>, [<InlineIfLambda>] f)
@@ -208,7 +240,10 @@ let handler = HandlerBuilder()
             http context info
  *)
 type ContextualTemplate =
-  Handler<string -> Markup.XmlNode list -> Markup.XmlNode, HttpHandler>
+  Handler<
+    string -> Markup.XmlNode list -> Markup.XmlNode,
+    HttpHandler
+   >
 
 let HxFragment targetId template =
   handler {

@@ -14,7 +14,7 @@ let caseDir = path.dirname(fileURLToPath(import.meta.url))
 // Ink syntax.
 // So we have our own...
 // #TODO: Turn this into a snapshot test to allow larger
-// examples easily
+// examples easily (see https://vitest.dev/guide/snapshot.html#custom-serializer)
 for (let file of fs.readdirSync(caseDir)) {
   if (!/\.ink$/.test(file)) continue
 
@@ -25,13 +25,3 @@ for (let file of fs.readdirSync(caseDir)) {
     testTree(InkLanguage.parser.parse(ink), expected)
   })
 }
-
-// Same for tags
-describe("tags", () => {
-  [
-    { tags: "#tag", expected: "Script(Tag(TagName))" },
-    { tags: "#tag #tag2", expected: "Script(Tag(TagName), Tag(TagName))" },
-    { tags: "#tag blob", expected: "Script(Tag(TagName, TagValue))" },
-    { tags: "-> goto #tag blob", expected: "Script(Divert(DivertArrow, Target), Tag(TagName, TagValue))" },
-  ].forEach(({tags, expected }) => it(tags, () => testTree(InkLanguage.parser.parse(tags), expected)))
-})

@@ -1,0 +1,6 @@
+Script(
+  Choice(ChoiceMarker, Condition(Target), Divert(DivertArrow, Target)),
+  Choice(ChoiceMarker, Condition(Target, OrOp, Target), Divert(DivertArrow, Target)),
+  Choice(ChoiceMarker, Condition(Target, OrOp, Target), Condition(Target), Divert(DivertArrow, Target)),
+  Choice(ChoiceMarker, EscapedChar, Dynamic)
+)

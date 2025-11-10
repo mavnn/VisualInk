@@ -15,6 +15,7 @@ open Serilog.Events
 open Microsoft.AspNetCore.Http.Features
 open Microsoft.AspNetCore.Http
 open Falco.Markup
+open System.Security.Claims
 
 module B = Bulma
 
@@ -293,14 +294,13 @@ type UserIdEnricher
   interface Core.ILogEventEnricher with
     member _.Enrich(logEvent, propertyFactory) =
       let ctx = httpContextAccessor.HttpContext
-      let user = User.getSessionUserFromCtx ctx
 
-      match user with
-      | Some u ->
-        logEvent.AddPropertyIfAbsent(
-          propertyFactory.CreateProperty("UserId", u.id)
-        )
-      | None -> ()
+      match ctx.User with
+      | null -> ()
+      | principal ->
+          match System.Guid.TryParse(principal.FindFirstValue "userId") with
+          | true, guid -> logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("UserId", guid))
+          | false, _ -> ()
 
 [<EntryPoint>]
 let main _ =

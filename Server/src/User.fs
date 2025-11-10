@@ -13,33 +13,35 @@ open Microsoft.AspNetCore.Identity
 open Prelude
 open View
 open JasperFx.Events.Projections
-open Microsoft.AspNetCore.Http
-open Microsoft.AspNetCore.Authentication
 open System.Text.Json.Serialization
 open Falco.Security
 open Microsoft.Extensions.Logging
 
 module B = Bulma
 
-type User = { id: System.Guid; username: string }
-
 [<JsonFSharpConverter>]
 type UserState =
   | Active
   | Disabled
 
+[<JsonFSharpConverter(BaseUnionEncoding = JsonUnionEncoding.UnwrapFieldlessTags)>]
+type Role = | GroupLeader
+
 [<JsonFSharpConverter>]
+[<CLIMutable>]
 type GoogleInfo = { googleId: string }
 
 [<JsonFSharpConverter>]
 type ExternalProviderInfo = GoogleInfo of GoogleInfo
 
 [<JsonFSharpConverter(SkippableOptionFields = SkippableOptionFields.Always)>]
+[<CLIMutable>]
 type UserRecord =
   { Id: System.Guid
     Username: string
     PasswordHash: string option
     State: UserState
+    Roles: List<Role> option
     ExternalInfo: ExternalProviderInfo option }
 
 [<JsonFSharpConverter>]
@@ -47,6 +49,11 @@ type UserEvent =
   | Created of UserRecord
   | PasswordChanged of passwordHash: string
   | Disabled
+
+type User =
+  { id: System.Guid
+    username: string
+    roles: Set<Role> }
 
 type UserRecordProjection() =
   inherit SingleStreamProjection<UserRecord, System.Guid>()
@@ -65,8 +72,8 @@ type UserRecordProjection() =
         Username = ""
         PasswordHash = None
         State = UserState.Disabled
+        Roles = Some []
         ExternalInfo = None }
-
 
   member _.Apply(userEvent, userRecord: UserRecord) =
     task {
@@ -95,10 +102,91 @@ type UserRecordProjection() =
                 State = UserState.Disabled }
     }
 
+[<JsonFSharpConverter>]
+type GroupRecord =
+  { Id: System.Guid
+    Name: string
+    Owner: System.Guid
+    InviteCode: string option
+    Members: System.Guid list }
+
+[<JsonFSharpConverter>]
+type GroupCreatedEvent =
+  { OwnerId: System.Guid
+    Name: string
+    InviteCode: string option }
+
+[<JsonFSharpConverter>]
+type GroupEvent =
+  | GroupCreated of GroupCreatedEvent
+  | MemberAdded of System.Guid
+  | MemberRemoved of System.Guid
+
+type GroupRecordProjection() =
+  inherit SingleStreamProjection<GroupRecord, System.Guid>()
+
+  member _.Create
+    (groupEvent: JasperFx.Events.IEvent<GroupEvent>)
+    =
+    match groupEvent.Data with
+    | GroupCreated group ->
+      { Id = groupEvent.StreamId
+        Name = group.Name
+        Owner = group.OwnerId
+        InviteCode = group.InviteCode
+        Members = [] }
+    | MemberAdded memberId ->
+      // We should always receive a created event
+      // first so this shouldn't ever happen...
+      // ...but it might, and we don't want to throw
+      // in projections.
+      { Id = groupEvent.StreamId
+        Name = ""
+        // This won't match anyone...
+        Owner = System.Guid.NewGuid()
+        InviteCode = None
+        Members = [ memberId ] }
+    | MemberRemoved _ ->
+      // We should always receive a created event
+      // first so this shouldn't ever happen...
+      // ...but it might, and we don't want to throw
+      // in projections.
+      { Id = groupEvent.StreamId
+        Name = ""
+        // This won't match anyone...
+        Owner = System.Guid.NewGuid()
+        InviteCode = None
+        Members = [] }
+
+  member _.Apply(groupEvent, groupRecord: GroupRecord) =
+    task {
+      match groupEvent with
+      | GroupCreated evt ->
+        // Should never occur after the first event in the stream
+        // but things might in theory arrive out of order
+        return
+          { groupRecord with
+              Name = evt.Name
+              Owner = evt.OwnerId
+              InviteCode = evt.InviteCode }
+      | MemberAdded memberId ->
+        return
+          { groupRecord with
+              Members =
+                List.distinct (
+                  memberId :: groupRecord.Members
+                ) }
+      | MemberRemoved memberId ->
+        return
+          { groupRecord with
+              Members =
+                List.filter
+                  (fun i -> i <> memberId)
+                  groupRecord.Members }
+    }
+
 type private LoginFormData =
-  { username: string
-    password: string
-    invite: string option }
+  { username: string; password: string }
 
 type private GoogleRedirectData = { credential: string }
 
@@ -117,7 +205,11 @@ let private findUserRecordFrom (googleId: string) =
     let! user =
       session
         .Query<UserRecord>()
-        .Where(fun x -> x.MatchesSql("data -> 'State' ->> 'Case' = ?", "Active"))
+        .Where(fun x ->
+          x.MatchesSql(
+            "data -> 'State' ->> 'Case' = ?",
+            "Active"
+          ))
         .Where(fun x ->
           x.MatchesSql(
             "data -> 'ExternalInfo' ->> 'googleId' = ?",
@@ -145,11 +237,58 @@ let private findUserRecord (username: string) =
         session
           .Query<UserRecord>()
           .SingleOrDefaultAsync(fun ur ->
-                ur.MatchesSql("data -> 'State' ->> 'Case' = ?", "Active")
-                    && ur.Username = username )
+            ur.MatchesSql(
+              "data -> 'State' ->> 'Case' = ?",
+              "Active"
+            )
+            && ur.Username = username)
       )
   }
   |> Handler.map Option.ofObj
+
+type IUserService =
+  abstract member GetUser:
+    unit -> Handler<User option, HttpHandler>
+
+type UserService(docStore: IDocumentStore) =
+  let mutable user: User option = None
+
+  interface IUserService with
+    member _.GetUser() =
+      match user with
+      | Some _ -> Handler.return' user
+      | None ->
+        Handler.fromCtx (fun ctx ->
+          match ctx.User with
+          | null -> None
+          | principal ->
+            match
+              System.Guid.TryParse(
+                principal.FindFirstValue "userId"
+              )
+            with
+            | false, _ -> None
+            | true, userId -> Some userId)
+        |> Handler.bindOption (fun userId ->
+          handler {
+            let session = docStore.LightweightSession()
+
+            let! userRecord =
+              session.LoadAsync<UserRecord> userId
+              |> Handler.returnTask
+
+            match Option.ofObj userRecord with
+            | Some ur ->
+              return
+                Some
+                  { username = ur.Username
+                    id = ur.Id
+                    roles =
+                      ur.Roles
+                      |> Option.defaultValue []
+                      |> Set.ofList }
+            | None -> return None
+          })
 
 
 let private updateUser
@@ -184,7 +323,7 @@ let private createUser (evt: UserEvent) =
       match evt with
       | Created { ExternalInfo = Some(GoogleInfo _) } ->
         "Google"
-      | _ -> "invite code"
+      | _ -> "direct login"
 
     logger.LogInformation(
       "New user created via {source}",
@@ -199,10 +338,7 @@ let private createUser (evt: UserEvent) =
 
     let result = session.Events.StartStream<UserRecord> evt
 
-    do!
-      Handler.returnTask (
-        task { do! session.SaveChangesAsync() }
-      )
+    do! session.SaveChangesAsync() |> Handler.returnTask'
 
     logger.LogInformation(
       "User record for {id} stored",
@@ -215,26 +351,12 @@ let private createUser (evt: UserEvent) =
       )
   }
 
-let getSessionUserFromCtx (ctx: HttpContext) =
-  match ctx.User with
-  | null -> None
-  | principal ->
-    match
-      System.Guid.TryParse(
-        principal.FindFirstValue "userId"
-      ),
-      principal.FindFirstValue "name"
-    with
-    | (false, _), _
-    | _, null -> None
-    | (true, id), username ->
-      Some { id = id; username = username }
+let getSessionUser () : Handler<User option, _> =
+  Handler.plug<IUserService, _> ()
+  |> Handler.bind (fun us -> us.GetUser())
 
-let getSessionUser (): Handler<User option, _> =
-  Handler.fromCtx getSessionUserFromCtx
-
-let ensureSessionUser (): Handler<User, HttpHandler> =
-  getSessionUser()
+let ensureSessionUser () : Handler<User, HttpHandler> =
+  getSessionUser ()
   |> Handler.bind (fun maybeUser ->
     match maybeUser with
     | Some user -> Handler.return' user
@@ -314,16 +436,6 @@ let private userForm viewContext title input =
                         [ _text p ] ]
                 | None -> yield! [] ] })
 
-    let inviteCode =
-      B.field (fun info ->
-        { info with
-            label = Some "Invite code"
-            input =
-              [ B.input
-                  [ _type_ "text"
-                    _placeholder_ "Your invite code"
-                    _name_ "invite" ] ] })
-
     let submitButton =
       B.field (fun info ->
         { info with
@@ -338,7 +450,7 @@ let private userForm viewContext title input =
                     _name_ "submit" ]
                   [ _text "Submit" ] ] })
 
-    let! token = Handler.getCsrfToken()
+    let! token = Handler.getCsrfToken ()
     let! template = viewContext.contextualTemplate
 
     let! redirectUri =
@@ -350,11 +462,7 @@ let private userForm viewContext title input =
         [ B.form
             token
             [ _id_ "user-form" ]
-            [ userInput
-              passwordInput
-              if input.isSignup then
-                yield! [ inviteCode ]
-              submitButton ]
+            [ userInput; passwordInput; submitButton ]
           |> B.enclose B.block
 
           match clientId with
@@ -399,19 +507,7 @@ let private signIn authScheme principal url =
           do! Response.signIn authScheme principal ctx
         })
 
-    let! hxHeaders = Handler.fromCtx Request.getHtmxHeaders
-
-    match hxHeaders.HxRequest with
-    | Some "true" ->
-      do!
-        Handler.fromCtx (
-          Response.withHeaders [ "HX-Location", url ]
-          >> ignore
-        )
-
-      return Response.ofEmpty
-    | Some _
-    | None -> return Response.redirectTemporarily "/"
+    return Response.withHxRefresh >> Response.redirectTemporarily url
   }
 
 let private getLoginFormData
@@ -527,8 +623,7 @@ let private getLoginData location viewContext =
                   (fun username password ->
                     LoginFormData
                       { username = username
-                        password = password
-                        invite = f.TryGetString "invite" })
+                        password = password })
                   (f.TryGetString "username")
                   (f.TryGetString "password")
             else
@@ -667,6 +762,7 @@ let private loginPostEndpoint viewContext =
                 Username = token.Email
                 PasswordHash = None
                 State = Active
+                Roles = Some []
                 ExternalInfo =
                   Some(
                     GoogleInfo
@@ -715,22 +811,8 @@ let private signupPostEndpoint viewContext =
 
     let! user = findUserRecord signupData.username
 
-    match user, signupData.invite with
-    | _, None ->
-      return!
-        userForm
-          viewContext
-          "Sign up"
-          { location = "/user/signup"
-            usernameValue = Some signupData.username
-            usernameProblem =
-              Some "You must supply an invite code"
-            passwordValue = Some signupData.password
-            passwordProblem =
-              Some "You must supply an invite code"
-            isSignup = true }
-        |> Handler.bind (HxFragment "user-form")
-    | Some _, Some "VIS" ->
+    match user with
+    | Some _ ->
       return!
         userForm
           viewContext
@@ -742,7 +824,7 @@ let private signupPostEndpoint viewContext =
             passwordProblem = None
             isSignup = true }
         |> Handler.bind (HxFragment "user-form")
-    | None, Some "VIS" ->
+    | None ->
       let userId = System.Guid.NewGuid()
 
       let userRecord =
@@ -750,6 +832,7 @@ let private signupPostEndpoint viewContext =
           Username = signupData.username
           PasswordHash = None
           State = Active
+          Roles = Some []
           ExternalInfo = None }
 
       let passwordHash =
@@ -765,32 +848,14 @@ let private signupPostEndpoint viewContext =
                 PasswordHash = Some passwordHash }
         )
 
-      return
-        Response.signInOptions
-          "Cookies"
-          (makePrincipal userRecord)
-          (AuthenticationProperties(RedirectUri = "/"))
-    | _, Some _ ->
-      return!
-        userForm
-          viewContext
-          "Sign up"
-          { location = "/user/signup"
-            usernameValue = Some signupData.username
-            usernameProblem =
-              Some "You must supply an invite code"
-            passwordValue = Some signupData.password
-            passwordProblem =
-              Some "You must supply an invite code"
-            isSignup = true }
-        |> Handler.bind (HxFragment "user-form")
+      return! signIn "Cookies" (makePrincipal userRecord) "/"
   }
   |> Handler.flatten
   |> post "/user/signup"
 
-let navbarAccountView() =
+let navbarAccountView () =
   handler {
-    match! getSessionUser() with
+    match! getSessionUser () with
     | Some user ->
       return
         [ B.navbarDropdown
@@ -811,11 +876,19 @@ let navbarAccountView() =
   }
 
 module Service =
+  open Microsoft.Extensions.DependencyInjection
+
   let addService: AddService =
     fun _ sc ->
+      sc.AddScoped<IUserService, UserService>() |> ignore
+
       sc.ConfigureMarten
         (fun (storeOpts: Marten.StoreOptions) ->
           storeOpts.Projections.Add<UserRecordProjection>
+            ProjectionLifecycle.Inline
+          |> ignore
+
+          storeOpts.Projections.Add<GroupRecordProjection>
             ProjectionLifecycle.Inline
           |> ignore)
 
