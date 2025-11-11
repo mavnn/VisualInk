@@ -1,1 +1,1 @@
-Script(VariableAssignment(Identifier, VarValue), Tag(TagValue))
+Script(VariableAssignment(Identifier, VarValue), VariableAssignment(Identifier, IncDec), Tag(TagValue))

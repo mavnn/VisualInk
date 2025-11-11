@@ -1,4 +1,4 @@
-* { thing } A choice -> go
-* {wait or torch} [I'll just wait here a moment] -> wait
-* {wait || torch} {thing} [I'll just wait here a moment] -> wait
+* (my_label) { true } A choice -> go
+* {wait or "torch"} [I'll just wait here a moment] -> wait
+* {wait || torch(22, "bob")} {thing > 45} [I'll just wait here a moment] -> wait
 *\ {not_condition}

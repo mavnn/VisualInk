@@ -1,1 +1,7 @@
-Script(Knot(Target), Knot(Target), Knot(Target), Stitch(Target))
+Script(
+  Knot(Identifier),
+  Knot(Identifier),
+  Knot(Identifier),
+  Stitch(Identifier),
+  Knot(FunctionDeclaration(function, Identifier),FunctionArgs(Identifier))
+)

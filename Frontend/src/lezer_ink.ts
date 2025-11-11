@@ -6,7 +6,7 @@ import { EditorState } from "@codemirror/state"
 
 function findKnotEnd(knotNode: SyntaxNode, state: EditorState) {
         let last: SyntaxNode = knotNode
-        while(true) {
+        while (true) {
                 let next = last.nextSibling
                 if (!next) { break }
                 last = next
@@ -42,6 +42,8 @@ export const InkLanguage = LRLanguage.define(
                                         OrOp: t.keyword,
                                         AndOp: t.keyword,
                                         NotOp: t.keyword,
+                                        Glue: t.className,
+                                        function: t.keyword,
                                         "{ } < > =": t.keyword
                                 })
                         ]

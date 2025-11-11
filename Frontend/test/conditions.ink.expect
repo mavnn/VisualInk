@@ -1,6 +1,6 @@
 Script(
-  Choice(ChoiceMarker, Condition(Target), Divert(DivertArrow, Target)),
-  Choice(ChoiceMarker, Condition(Target, OrOp, Target), Divert(DivertArrow, Target)),
-  Choice(ChoiceMarker, Condition(Target, OrOp, Target), Condition(Target), Divert(DivertArrow, Target)),
+  Choice(ChoiceMarker, Label(Identifier), Condition(BooleanLiteral), Divert(DivertArrow, Target)),
+  Choice(ChoiceMarker, Condition(Target, OrOp, StringLiteral), Divert(DivertArrow, Target)),
+  Choice(ChoiceMarker, Condition(Target, OrOp, FunctionCall(Target, Number, StringLiteral)), Condition(Target, ComparisonOp, Number), Divert(DivertArrow, Target)),
   Choice(ChoiceMarker, EscapedChar, Dynamic)
 )

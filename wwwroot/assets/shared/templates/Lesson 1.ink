@@ -1,9 +1,18 @@
-Once upon a time...
+// Set up
+VAR speaker = "Narrator"
+VAR music = ""
+VAR scene = ""
+// End set up
 
-...there was a story...
+-> start
 
-...being told very slowly.
+=== start ===
+Telling a story
 
-But we can also tell it a bit faster <>
+Very slowly
 
-if we want to.
+Althought we can tell it <>
+
+a bit faster if we want to.
+
+-> END.

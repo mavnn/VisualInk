@@ -2,23 +2,12 @@
 //    These aren't part of your visual novel,
 //    they're a note you can leave for yourself.
 
-// We use 3 special variables in our visual novels.
-// These store who's speaking, what scene is showing,
-// and what music is playing. We can leave them blank
-// if there's no music or location yet.
+// Set up
 VAR scene = ""
 VAR music = ""
-
-// We normally start the speaker set to the special
-// "Narrator" value, which allows us to add narration
-// to our story (narration is all the bits of a story
-// that are told to the audience, but none of the
-// characters actually say!)
 VAR speaker = "Narrator"
+// End set up
 
-// Normal text like this is our 'script' -
-// what the player sees. So this is our
-// opening narration.
 Once upon a time...
 
 // Let's set the scene
@@ -29,22 +18,16 @@ Hey, Eddy. We should really get going for school.
 
 ~speaker = "Eddy"
 
-// See that '#emote' at the end? That changes
-// the emotion of the speaker shown. Remember
-// that you need an image to match!
 I dunno. I don't really feel like it. #emote tired
 
-// This block creates a set of choices; the lines
-// starting with a '*' are each a choice, while
-// the '-> name' bit says 'go to the section with
-// that name'
+// These choices will jump you forward through the
+// story!
  * [But I suppose we should] -> school
  * [Let's just stay here] -> noschool
 
 
-// Talking of sections! here's are first one.
 === school ===
-// Change the scene, but Eddy is still talking.
+
 ~scene = "Classroom"
 
 Actually, this new history teacher is pretty interesting!
@@ -54,9 +37,9 @@ Actually, this new history teacher is pretty interesting!
 
 === noschool ===
 ~speaker = "Narrator"
+
 ... some time later ...
 
-~speaker = "Eddy"
 I think I've drunk too much coffee! #emote fear
 
 -> evening

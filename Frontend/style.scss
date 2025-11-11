@@ -1,5 +1,5 @@
 @use "bulma/sass" with (
-    $family-primary: 'charter, serif'
+    $family-primary: 'charter, serif',
 );
 
 @font-face {
@@ -84,3 +84,6 @@ html {
 }
 .shake { animation: 0.1s ease-in-out 0.5s 5 shake; }
 .hide { opacity: 0; }
+.button {
+    --bulma-button-outer-shadow-a: 0.05 !important;
+}

@@ -1,1 +1,1 @@
-Script(Choice(ChoiceMarker, Divert(DivertArrow, Target)), Choice(ChoiceMarker))
+Script(Choice(ChoiceMarker, Divert(DivertArrow, Target)), Choice(ChoiceMarker), Gather(Label(Identifier)))
