@@ -11,7 +11,7 @@ Telling a story
 
 Very slowly
 
-Althought we can tell it <>
+Although we can tell it <>
 
 a bit faster if we want to.
 

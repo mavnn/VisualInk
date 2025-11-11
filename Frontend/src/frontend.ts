@@ -112,7 +112,7 @@ function getEditor() {
 
 function addText(text: string) {
         let selection = editor?.state.selection.main!
-        editor?.dispatch({ changes: [{ from: selection.from, insert: text }] })
+        editor?.dispatch({ changes: [{ from: selection.from, to: selection.to, insert: text }] })
 }
 
 function requestFullscreenPlaythrough() {
