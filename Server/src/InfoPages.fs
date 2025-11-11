@@ -21,69 +21,58 @@ module B = Bulma
        going to self host the project.
 
        *)
-
-let private privacyNotice viewContext =
+let private mdToHtml path =
   handler {
-    let! template = viewContext.contextualTemplate
-
     let! hostEnv = Handler.plug<IWebHostEnvironment, _> ()
 
     let! markdown =
       File.ReadAllTextAsync(
-        Path.Join(
-          hostEnv.ContentRootPath,
-          "content/infoPages/privacy.md"
-        )
+        Path.Join(hostEnv.ContentRootPath, path)
       )
       |> Handler.returnTask
       |> Handler.map Markdown.ToHtml
 
+    return markdown
+  }
+
+let private mdPage title path viewContext =
+  handler {
+    let! template = viewContext.contextualTemplate
+
+    let! markdown =
+      mdToHtml path |> Handler.map Markdown.ToHtml
+
     let content =
       [ B.content [ Hx.boostOff ] [ _text markdown ] ]
 
-    return
-      Response.ofHtml (template "Privacy Notice" content)
+    return Response.ofHtml (template title content)
   }
+
+let private privacyNotice viewContext =
+  mdPage
+    "Privacy Notice"
+    "content/infoPages/privacy.md"
+    viewContext
   |> Handler.flatten
   |> get "/info/privacy"
 
 let private about viewContext =
-  handler {
-    let! template = viewContext.contextualTemplate
-    let! hostEnv = Handler.plug<IWebHostEnvironment, _> ()
-
-    let! markdown =
-      File.ReadAllTextAsync(
-        Path.Join(
-          hostEnv.ContentRootPath,
-          "content/infoPages/about.md"
-        )
-      )
-      |> Handler.returnTask
-      |> Handler.map Markdown.ToHtml
-
-    let content =
-      [ B.content [ Hx.boostOff ] [ _text markdown ] ]
-
-    return Response.ofHtml (template "About us" content)
-  }
+  mdPage "About us" "content/infoPages/about.md" viewContext
   |> Handler.flatten
   |> get "/info/about"
 
+let private inkGuide viewContext =
+  mdPage
+    "The Ink cheat sheet"
+    "content/infoPages/a_guide_to_ink.md"
+    viewContext
+  |> Handler.flatten
+  |> get "/info/ink_guide"
 
 let footer: Handler<XmlNode, HttpHandler> =
   handler {
-    let! hostEnv = Handler.plug<IWebHostEnvironment, _> ()
-
     let! markdown =
-      File.ReadAllTextAsync(
-        Path.Join(
-          hostEnv.ContentRootPath,
-          "content/infoPages/footer_text.md"
-        )
-      )
-      |> Handler.returnTask
-      |> Handler.map Markdown.ToHtml
+      mdToHtml "content/infoPages/footer_text.md"
 
     return
       B.content
@@ -95,12 +84,23 @@ let footer: Handler<XmlNode, HttpHandler> =
   }
 
 let nav =
-  B.navbarItemA
-    [ _href_ "/info/about" ]
-    [ _text "About Us" ]
+  B.navbarDropdown
+    []
+    {| link = "Help and Info"
+       dropdown =
+        [ B.navbarItemA
+            [ _href_ "/info/ink_guide" ]
+            [ _text "Ink cheat sheet" ]
+          B.navbarItemA
+            [ _href_ "/info/about" ]
+            [ _text "About Us" ] ]
+
+    |}
 
 module Service =
   let endpoints viewContext =
-    [ privacyNotice viewContext; about viewContext ]
+    [ privacyNotice viewContext
+      about viewContext
+      inkGuide viewContext ]
 
   let addService: AddService = fun _ -> id
