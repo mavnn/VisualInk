@@ -39,8 +39,7 @@ let private mdPage title path viewContext =
   handler {
     let! template = viewContext.contextualTemplate
 
-    let! markdown =
-      mdToHtml path |> Handler.map Markdown.ToHtml
+    let! markdown = mdToHtml path
 
     let content =
       [ B.content [ Hx.boostOff ] [ _text markdown ] ]

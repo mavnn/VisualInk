@@ -51,9 +51,9 @@
       },
       "Markdig": {
         "type": "Direct",
-        "requested": "[0.42.0, )",
-        "resolved": "0.42.0",
-        "contentHash": "tINdftVfbTujqfPXrQOSl9/6XCS2Y4Zwz+i7UPBgxRNnDtI1CjyQ5UA/5sKoSOmfECyWkTztY/vbcc/u1DA8nA=="
+        "requested": "[0.43.0, )",
+        "resolved": "0.43.0",
+        "contentHash": "tbP3Y/GYC5pIUWXw6Iqf+R5CwBGA4VJswnlgS2x3TgcHoH4IlnGVmL7hfA1sXkZoCPm/4mhzS8cJUkWhQthaPg=="
       },
       "Marten": {
         "type": "Direct",
