@@ -458,8 +458,10 @@ let editGet viewContext =
 let demoGet viewContext =
   handler {
     let demo =
-      DemoEditor {| title = "Trying out the Ink editor"; ink =
-                  """
+      DemoEditor
+        {| title = "Trying out the Ink editor"
+           ink =
+            """
 Oh nice, an online Ink editor.
 
 * Which some {~pretty colours|syntax highlighting} going on!
@@ -469,12 +471,13 @@ Oh nice, an online Ink editor.
 We get code folding for knots, too.
 
 -> END
-                  """.TrimStart() |}
+                  """
+              .TrimStart() |}
 
     let! view = editor demo
     let! template = viewContext.contextualTemplate
 
-    let html = template "Edit Script" [view]
+    let html = template "Edit Script" [ view ]
 
     return
       Response.withHxPushUrl $"/script/demo"
@@ -702,19 +705,21 @@ let lintPost =
 
     do!
       if referrer.Length > 36 then
-        let id =
-          System.Guid(
+        match
+          System.Guid.TryParse(
             referrer.Substring(referrer.Length - 36, 36)
           )
+        with
+        | true, id ->
+          let script =
+            { id = id
+              ink = json.ink
+              inkJson = inkJson
+              stats = stats
+              title = json.title }
 
-        let script =
-          { id = id
-            ink = json.ink
-            inkJson = inkJson
-            stats = stats
-            title = json.title }
-
-        save script
+          save script
+        | false, _ -> Handler.return' ()
       else
         Handler.return' ()
 
