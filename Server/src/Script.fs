@@ -9,6 +9,7 @@ open Falco.Routing
 open View
 open System.Text.RegularExpressions
 open System.Text.Json.Serialization
+open System.Linq
 open Microsoft.AspNetCore.Hosting
 
 module B = Bulma
@@ -30,7 +31,34 @@ type CompilationResult =
     (string * Ink.ErrorType) seq *
     ScriptStats option
 
-let private compile title ink =
+type ScriptFileHandler
+  (docStore: IDocumentStore, userService: User.IUserService)
+  =
+  interface Ink.IFileHandler with
+    member _.ResolveInkFilename includeName = includeName
+
+    member _.LoadInkFileContents
+      (fullFilename: string)
+      : string =
+      let userId = userService.GetUserId()
+
+      match userId with
+      | Some uid ->
+        let session = docStore.QuerySession(uid.ToString())
+
+        let script =
+          session
+            .Query<Script>()
+            .Where(fun s -> s.title = fullFilename)
+            .OrderBySql("mt_last_modified desc")
+            .First()
+
+        script.ink
+      | None ->
+        failwithf "Script '%s' not found" fullFilename
+
+
+let private compile fileHandler title ink =
   let errors =
     new System.Collections.Generic.List<
       string * Ink.ErrorType
@@ -44,7 +72,8 @@ let private compile title ink =
       ink,
       new Ink.Compiler.Options(
         sourceFilename = title,
-        errorHandler = errorHandler
+        errorHandler = errorHandler,
+        fileHandler = fileHandler
       )
     )
 
@@ -67,7 +96,7 @@ type ScriptTemplate = { title: string; ink: string }
 let private getTemplateList () =
   handler {
     let! hostEnvironment =
-      Handler.plug<IWebHostEnvironment,_> ()
+      Handler.plug<IWebHostEnvironment, _> ()
 
     let contentRootPath = hostEnvironment.WebRootPath
 
@@ -88,7 +117,7 @@ let private getTemplateList () =
 let private getTemplate title =
   handler {
     let! hostEnvironment =
-      Handler.plug<IWebHostEnvironment,_> ()
+      Handler.plug<IWebHostEnvironment, _> ()
 
     let contentRootPath = hostEnvironment.WebRootPath
 
@@ -111,11 +140,11 @@ let private getTemplate title =
 
 let create (input: ScriptTemplate) =
   handler {
-    use! session =
-      DocStore.startSession()
+    use! session = DocStore.startSession ()
 
     let id = System.Guid.NewGuid()
-    let story = compile input.title input.ink
+    let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
+    let story = compile fileHandler input.title input.ink
 
     match story with
     | CompiledStory(story, stats) ->
@@ -148,76 +177,101 @@ let create (input: ScriptTemplate) =
 
 let save (script: Script) =
   handler {
-    use! session =
-      DocStore.startSession()
+    use! session = DocStore.startSession ()
 
     session.Update<Script> script
     do! DocStore.saveChanges session
   }
 
-let load (guid: System.Guid) = DocStore.load<Script, System.Guid, _> guid
+let load (guid: System.Guid) =
+  DocStore.load<Script, System.Guid, _> guid
 
-let editor (existing: Script) =
+type EditorInput =
+  | DemoEditor of {| ink: string; title: string |}
+  | UserEditor of Script
+
+
+let editor input =
   handler {
-    let! token = Handler.getCsrfToken()
+    let! token = Handler.getCsrfToken ()
 
-    let form =
-      B.form
-        token
-        [ _id_ "editor-form"
-          _class_
-            "is-flex is-flex-direction-column is-items-align-stretch"
-          _style_ "height: 100%;" ]
-        [ B.field (fun info ->
-            { info with
-                label = Some "Title"
-                field = [ _class_ "is-flex-grow-0" ]
-                input =
-                  [ _input
-                      [ _class_ "input"
-                        _type_ "text"
-                        _name_ "title"
-                        _id_ "story-title"
-                        _value_ existing.title
-                        _onkeyup_
-                          "document.getElementById('run-button').setAttribute('disabled', true);"
-                        _onblur_
-                          "fe.callLinter(fe.getEditor());"
-                        _placeholder_ "Your script title" ] ] })
-          _div
-            [ _hidden_; _id_ "last-saved" ]
-            [ _text existing.ink ]
-          _div
-            [ _class_
-                "field is-flex-grow-1 is-flex is-flex-direction-column is-items-align-stretch" ]
-            [ _label
-                [ _class_ "label" ]
-                [ _text "The script" ]
-              _div
-                [ _id_ "codemirror"
-                  _class_ "control"
-                  _style_ "height: 100%;" ]
-                [ _script [] [ _text "fe.addEditor()" ] ] ]
-          _div
-            [ _class_
-                "field is-grouped is-grouped-centered is-flex-grow-0" ]
-            [ _div
-                [ _class_ "control" ]
-                [ _div
-                    [ _class_ "control" ]
-                    [ B.button
-                        [ _id_ "run-button"
-                          Hx.post "/playthrough/start"
-                          HxMorph.morphOuterHtml
-                          Hx.select "#page"
-                          Hx.targetCss "#page"
-                          _disabled_
-                          _name_ "script"
-                          _class_ "is-primary"
-                          _value_ (existing.id.ToString()) ]
-                        [ _text "Run" ] ] ] ] ]
+    let title =
+      match input with
+      | DemoEditor de -> de.title
+      | UserEditor ue -> ue.title
 
-    let! speakers = StoryAssets.findSpeakers()
+    let ink =
+      match input with
+      | DemoEditor de -> de.ink
+      | UserEditor ue -> ue.ink
+
+    let runButton =
+      match input with
+      | UserEditor existing ->
+        B.button
+          [ _id_ "run-button"
+            Hx.post "/playthrough/start"
+            HxMorph.morphOuterHtml
+            Hx.select "#page"
+            Hx.targetCss "#page"
+            _disabled_
+            _name_ "script"
+            _class_ "is-primary"
+            _value_ (existing.id.ToString()) ]
+          [ _text "Run" ]
+      | DemoEditor _ ->
+        B.button
+          [ _disabled_ ]
+          [ _text "Sign up to run your script" ]
+
+    B.form
+      token
+      [ _id_ "editor-form"
+        _class_
+          "is-flex is-flex-direction-column is-items-align-stretch"
+        _style_ "height: 100%;" ]
+      [ B.field (fun info ->
+          { info with
+              label = Some "Title"
+              field = [ _class_ "is-flex-grow-0" ]
+              input =
+                [ _input
+                    [ _class_ "input"
+                      _type_ "text"
+                      _name_ "title"
+                      _id_ "story-title"
+                      _value_ title
+                      _onkeyup_
+                        "document.getElementById('run-button').setAttribute('disabled', true);"
+                      _onblur_
+                        "fe.callLinter(fe.getEditor());"
+                      _placeholder_ "Your script title" ] ] })
+        _div [ _hidden_; _id_ "last-saved" ] [ _text ink ]
+        _div
+          [ _class_
+              "field is-flex-grow-1 is-flex is-flex-direction-column is-items-align-stretch" ]
+          [ _label
+              [ _class_ "label" ]
+              [ _text "The script" ]
+            _div
+              [ _id_ "codemirror"
+                _class_ "control"
+                _style_ "height: 100%;" ]
+              [ _script [] [ _text "fe.addEditor()" ] ] ]
+        _div
+          [ _class_
+              "field is-grouped is-grouped-centered is-flex-grow-0" ]
+          [ _div
+              [ _class_ "control" ]
+              [ _div [ _class_ "control" ] [ runButton ] ] ] ]
+
+  }
+
+let scriptManager (existing: Script) =
+  handler {
+    let! form = editor (UserEditor existing)
+
+    let! speakers = StoryAssets.findSpeakers ()
 
     let encode v =
       v
@@ -254,7 +308,7 @@ let editor (existing: Script) =
           { B.MenuInput.label = "Speakers"
             B.MenuInput.items = list }
 
-    let! scenes = StoryAssets.findScenes()
+    let! scenes = StoryAssets.findScenes ()
 
     let sceneMenu =
       scenes
@@ -286,7 +340,7 @@ let editor (existing: Script) =
           { B.MenuInput.label = "Scenes"
             B.MenuInput.items = list }
 
-    let! music = StoryAssets.findAllMusic()
+    let! music = StoryAssets.findAllMusic ()
 
     let musicMenu =
       music
@@ -325,7 +379,7 @@ let editor (existing: Script) =
 let createGet viewContext =
   handler {
     let! template = viewContext.contextualTemplate
-    let! token = Handler.getCsrfToken()
+    let! token = Handler.getCsrfToken ()
     let! scriptTemplates = getTemplateList ()
 
     let chooser =
@@ -364,7 +418,7 @@ let createPost viewContext =
     let! scriptTemplate = getTemplate input
     let! script = create scriptTemplate
 
-    let! view = editor script
+    let! view = scriptManager script
 
     let! template = viewContext.contextualTemplate
     let html = template "Edit Script" view
@@ -389,7 +443,7 @@ let editGet viewContext =
         Response.withStatusCode 404 >> Response.ofEmpty
       )
 
-    let! view = editor existing
+    let! view = scriptManager existing
     let! template = viewContext.contextualTemplate
 
     let html = template "Edit Script" view
@@ -400,6 +454,29 @@ let editGet viewContext =
   }
   |> Handler.flatten
   |> get "/script/{guid:guid}"
+
+let demoGet viewContext =
+  handler {
+    let demo =
+      DemoEditor {| title = "Trying out the Ink editor"; ink =
+                  """
+Oh nice, an online Ink editor.
+
+* Which some {~pretty colours|syntax highlighting} going on!
+  -> also_error_reporting
+                  """|}
+
+    let! view = editor demo
+    let! template = viewContext.contextualTemplate
+
+    let html = template "Edit Script" [view]
+
+    return
+      Response.withHxPushUrl $"/script/demo"
+      >> Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> get "/script/demo"
 
 let editPost viewContext =
   handler {
@@ -418,7 +495,8 @@ let editPost viewContext =
             (data.TryGetStringNonEmpty "title")
             (data.TryGetString "ink"))
 
-    let story = compile input.title input.ink
+    let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
+    let story = compile fileHandler input.title input.ink
 
     let inkJson, stats =
       match story with
@@ -436,7 +514,7 @@ let editPost viewContext =
 
     let! template = viewContext.contextualTemplate
 
-    let! view = editor script
+    let! view = scriptManager script
     let html = template "Edit Script" view
 
     return! HxFragment "body" html
@@ -503,7 +581,7 @@ let private listView scripts =
 
 let listGet (viewContext: ViewContext) =
   handler {
-    let! user = User.ensureSessionUser()
+    let! user = User.ensureSessionUser ()
     let! documentStore = Handler.plug<IDocumentStore, _> ()
 
     let session =
@@ -531,7 +609,7 @@ let editDelete viewContext =
         Request.getRoute >> fun d -> d.GetGuid "guid"
       )
 
-    let! user = User.ensureSessionUser()
+    let! user = User.ensureSessionUser ()
     let! documentStore = Handler.plug<IDocumentStore, _> ()
 
     let session =
@@ -601,7 +679,10 @@ let lintPost =
     let! headers = Handler.fromCtx Request.getHeaders
     let referrer = headers.GetString "Referer"
 
-    let compileResult = compile json.title json.ink
+    let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
+
+    let compileResult =
+      compile fileHandler json.title json.ink
 
     let inkJson, stats, response =
       match compileResult with
@@ -643,11 +724,13 @@ let nav =
     [ _text "Scripts" ]
 
 module Service =
+  open Microsoft.Extensions.DependencyInjection
 
   let endpoints viewContext =
     [ createGet viewContext
       createPost viewContext
       editGet viewContext
+      demoGet viewContext
       editPost viewContext
       editDelete viewContext
       listGet viewContext
@@ -655,6 +738,9 @@ module Service =
 
   let addService: AddService =
     fun _ sc ->
+      sc.AddScoped<Ink.IFileHandler, ScriptFileHandler>()
+      |> ignore
+
       sc.ConfigureMarten(fun (storeOpts: StoreOptions) ->
         storeOpts.Schema.For<Script>().MultiTenanted()
         |> ignore)

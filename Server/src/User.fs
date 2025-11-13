@@ -16,6 +16,7 @@ open JasperFx.Events.Projections
 open System.Text.Json.Serialization
 open Falco.Security
 open Microsoft.Extensions.Logging
+open Microsoft.AspNetCore.Http
 
 module B = Bulma
 
@@ -250,45 +251,55 @@ type IUserService =
   abstract member GetUser:
     unit -> Handler<User option, HttpHandler>
 
-type UserService(docStore: IDocumentStore) =
+  abstract member GetUserId: unit -> System.Guid option
+
+type UserService
+  (
+    docStore: IDocumentStore,
+    httpContextAccessor: IHttpContextAccessor
+  ) =
   let mutable user: User option = None
 
   interface IUserService with
-    member _.GetUser() =
-      match user with
-      | Some _ -> Handler.return' user
-      | None ->
-        Handler.fromCtx (fun ctx ->
-          match ctx.User with
-          | null -> None
-          | principal ->
-            match
-              System.Guid.TryParse(
-                principal.FindFirstValue "userId"
-              )
-            with
-            | false, _ -> None
-            | true, userId -> Some userId)
-        |> Handler.bindOption (fun userId ->
-          handler {
-            let session = docStore.LightweightSession()
+    member _.GetUserId() =
+      let ctx = httpContextAccessor.HttpContext
 
-            let! userRecord =
-              session.LoadAsync<UserRecord> userId
-              |> Handler.returnTask
+      match ctx.User with
+      | null -> None
+      | principal ->
+        match
+          System.Guid.TryParse(
+            principal.FindFirstValue "userId"
+          )
+        with
+        | false, _ -> None
+        | true, userId -> Some userId
 
-            match Option.ofObj userRecord with
-            | Some ur ->
-              return
-                Some
-                  { username = ur.Username
-                    id = ur.Id
-                    roles =
-                      ur.Roles
-                      |> Option.defaultValue []
-                      |> Set.ofList }
-            | None -> return None
-          })
+    member x.GetUser() =
+      handler {
+        let userId = (x :> IUserService).GetUserId()
+        let session = docStore.LightweightSession()
+
+        let! userRecord =
+          Handler.return' userId
+          |> Handler.bindOption (fun userId ->
+          session.LoadAsync<UserRecord> userId
+          |> Handler.returnTask |> Handler.map Option.ofObj)
+
+        match userRecord with
+        | Some ur ->
+          user <-
+            { username = ur.Username
+              id = ur.Id
+              roles =
+                ur.Roles
+                |> Option.defaultValue []
+                |> Set.ofList }
+            |> Some
+
+          return user
+        | None -> return None
+      }
 
 
 let private updateUser
@@ -507,7 +518,9 @@ let private signIn authScheme principal url =
           do! Response.signIn authScheme principal ctx
         })
 
-    return Response.withHxRefresh >> Response.redirectTemporarily url
+    return
+      Response.withHxRefresh
+      >> Response.redirectTemporarily url
   }
 
 let private getLoginFormData
@@ -848,7 +861,8 @@ let private signupPostEndpoint viewContext =
                 PasswordHash = Some passwordHash }
         )
 
-      return! signIn "Cookies" (makePrincipal userRecord) "/"
+      return!
+        signIn "Cookies" (makePrincipal userRecord) "/"
   }
   |> Handler.flatten
   |> post "/user/signup"

@@ -21,8 +21,10 @@ async function callLinter(view: EditorView) {
                 }
         );
         const lines = await response.json();
-        const runButton = document.getElementById('run-button')!;
-        lines.length === 0 ? runButton.removeAttribute('disabled') : runButton.setAttribute('disabled', "true");
+        const runButton = document.getElementById('run-button');
+        if (runButton) {
+                lines.length === 0 ? runButton.removeAttribute('disabled') : runButton.setAttribute('disabled', "true");
+        }
         return lines.map((lineBased: any) => {
                 let line = view.state.doc.line(lineBased.line);
                 return { message: lineBased.message, severity: lineBased.severity, from: line.from, to: line.to }
@@ -86,8 +88,8 @@ function inkCompletions(context: CompletionContext) {
 
 const changeListener = EditorView.updateListener.of((v) => {
         if (v.docChanged) {
-                var runButton = document.getElementById('run-button')!;
-                runButton.setAttribute('disabled', "true");
+                var runButton = document.getElementById('run-button');
+                runButton?.setAttribute('disabled', "true");
         }
 })
 
