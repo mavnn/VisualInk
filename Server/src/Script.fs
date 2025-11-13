@@ -464,7 +464,12 @@ Oh nice, an online Ink editor.
 
 * Which some {~pretty colours|syntax highlighting} going on!
   -> also_error_reporting
-                  """|}
+
+=== a_knot ===
+We get code folding for knots, too.
+
+-> END
+                  """.TrimStart() |}
 
     let! view = editor demo
     let! template = viewContext.contextualTemplate
