@@ -175,7 +175,8 @@ let makeNavbar: Handler<XmlNode, HttpHandler> =
 
 let intro =
   """
-      Visual Ink is a tool for building, playing, and publishing visual novels
+      Visual Ink is a tool for building, playing, and publishing visual novels aimed
+      at first time writers and quick prototyping.
 
       Write straight forward scripts using [Ink](https://www.inklestudios.com/ink/)
       to create your own visual novels, with characters, sound tracks, locations...
@@ -186,6 +187,11 @@ let intro =
 
       If you want to try writing your own novels, you'll need to [sign up](/user/signup) to
       create an account so you can save and run your own scripts.
+
+      For a more guided approach, we're also running courses aimed at people nine years old
+      and up who are interested in learning more about story telling and coding in
+      partnership with [Thinkers Meetup](https://www.thinkersmeetup.com/). Have a look for
+      the Coding Games with a Story course for your age group, which run once per half term.
   """
   |> (fun s -> s.Split '\n')
   |> Array.map (fun line -> line.Substring (min 6 line.Length))
