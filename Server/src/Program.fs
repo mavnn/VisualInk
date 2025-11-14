@@ -137,16 +137,12 @@ let skeletalTemplate title content =
               _type_ "image/png"
               _href_ "/favicon-192x192.png"
               _size_ "192x192" ]
-          _link
-            [ _rel_ "stylesheet"
-              _href_
-                "/style.css" ]
+          _link [ _rel_ "stylesheet"; _href_ "/style.css" ]
           _link
             [ _rel_ "stylesheet"
               _href_
                 "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" ]
-          _script [ _src_ "/bundle.js" ] []
-           ]
+          _script [ _src_ "/bundle.js" ] [] ]
       _body
         [ _id_ "body"; Hx.ext "morph"; Hx.boostOn ]
         [ _div
@@ -157,7 +153,7 @@ let skeletalTemplate title content =
 
 let makeNavbar: Handler<XmlNode, HttpHandler> =
   handler {
-    let! userView = User.navbarAccountView()
+    let! userView = User.navbarAccountView ()
 
     return
       B.navbar
@@ -175,6 +171,26 @@ let makeNavbar: Handler<XmlNode, HttpHandler> =
                   StoryAssets.musicNav ]
               B.navbarEnd [] (InfoPages.nav :: userView) ] }
   }
+
+
+let intro =
+  """
+      Visual Ink is a tool for building, playing, and publishing visual novels
+
+      Write straight forward scripts using [Ink](https://www.inklestudios.com/ink/)
+      to create your own visual novels, with characters, sound tracks, locations...
+      and choices!
+
+      Want a taste? Try our short example game [Alone In The Dark](/examples/AloneInTheDark)
+      and then have a look at [the script](/script/demo) that produced the game you just played!
+
+      If you want to try writing your own novels, you'll need to [sign up](/user/signup) to
+      create an account so you can save and run your own scripts.
+  """
+  |> (fun s -> s.Split '\n')
+  |> Array.map (fun line -> line.Substring (min 6 line.Length))
+  |> String.concat "\n"
+  |> Markdig.Markdown.ToHtml
 
 
 let contextualTemplate: ContextualTemplate =
@@ -197,37 +213,18 @@ let indexGet =
   handler {
     let! template = contextualTemplate
 
+    let! exampleInk =
+      Content.getContentText "examples/AloneInTheDark.ink"
+      // Skip the title line for the front page example
+      |> Handler.map (fun s -> s.Split('\n', 2).[1])
+
     let html =
       [ B.title [] "Welcome to Visual Ink!"
         B.columns
           []
           [ B.column
               [ _class_ "is-half" ]
-              [ B.content
-                  []
-                  [ _p'
-                      "Visual Ink is a fun tool for building and playing visual novels."
-                    _p
-                      []
-                      [ _text "It uses "
-                        _a
-                          [ _href_
-                              "https://www.inklestudios.com/ink/"
-                            Hx.boostOff ]
-                          [ _text "Ink" ]
-                        _text
-                          " from Inkle Studios to let you write your visual novel as if it were a movie script." ]
-                    _p
-                      []
-                      [ _text
-                          "Not sure how to get started? Well, you'll need to "
-                        _a
-                          [ _href_ "/user/signup" ]
-                          [ _text "sign up" ]
-                        _text
-                          " if it is your first time here." ]
-                    _p'
-                      "After that, try the 'Scripts' button in the menu at the top, and create a new script (the 'Getting started' template is a good way to get started). And if you're in a class or club, I'm sure the person who's running it will have something ready for you!" ] ]
+              [ B.content [] [ _text intro ] ]
             B.column
               [ _class_ "is-half" ]
               [
@@ -237,29 +234,22 @@ let indexGet =
                     _style_
                       "width: 100%; object-fill: none;" ]
                   [ _src_ "/example.png"
-                    _style_ "border-radius: var(--bulma-radius-medium);"
+                    _style_
+                      "border-radius: var(--bulma-radius-medium);"
                     _alt_
                       "Picture of a visual novel play through in progress with a cartoon character saying 'Once upon a time'" ]
-                B.block [] [
-                   B.box [] [
-                       _text 
-                         """
-VAR speaker = "Narrator"
-VAR scene = ""
-VAR music = ""
+                B.block
+                  []
+                  [ _div
+                      [ _style_ "display: none;"
+                        _id_ "example-text" ]
+                      [ _text exampleInk ]
+                    B.box
+                      [ _id_ "example-viewer"
+                        _style_ "max-height: 25rem;" ]
+                      [
 
-~scene = "Cafe"
-
-The smell of coffee filled the air.
-
-~music = "Background Jazz"
-~speaker = "Eddy"
-
-Once upon a time...
-                         """ |> B.enclose _pre
-
-                   ]
-                ]] ] ]
+                      ] ] ] ] ]
       |> B.container []
       |> List.singleton
       |> template "Visual Ink"
@@ -298,9 +288,16 @@ type UserIdEnricher
       match ctx.User with
       | null -> ()
       | principal ->
-          match System.Guid.TryParse(principal.FindFirstValue "userId") with
-          | true, guid -> logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("UserId", guid))
-          | false, _ -> ()
+        match
+          System.Guid.TryParse(
+            principal.FindFirstValue "userId"
+          )
+        with
+        | true, guid ->
+          logEvent.AddPropertyIfAbsent(
+            propertyFactory.CreateProperty("UserId", guid)
+          )
+        | false, _ -> ()
 
 [<EntryPoint>]
 let main _ =
@@ -383,7 +380,8 @@ let main _ =
           (fun (opts: FormOptions) ->
             opts.BufferBody <- true
             // 5mb file limit
-            opts.MultipartBodyLengthLimit <- 5L * 1024L * 1024L))
+            opts.MultipartBodyLengthLimit <-
+              5L * 1024L * 1024L))
 
   builder
     .Build()

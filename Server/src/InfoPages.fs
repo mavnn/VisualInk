@@ -22,18 +22,7 @@ module B = Bulma
 
        *)
 let private mdToHtml path =
-  handler {
-    let! hostEnv = Handler.plug<IWebHostEnvironment, _> ()
-
-    let! markdown =
-      File.ReadAllTextAsync(
-        Path.Join(hostEnv.ContentRootPath, path)
-      )
-      |> Handler.returnTask
-      |> Handler.map Markdown.ToHtml
-
-    return markdown
-  }
+    Content.getContentText path |> Handler.map Markdown.ToHtml
 
 let private mdPage title path viewContext =
   handler {
@@ -50,20 +39,20 @@ let private mdPage title path viewContext =
 let private privacyNotice viewContext =
   mdPage
     "Privacy Notice"
-    "content/infoPages/privacy.md"
+    "infoPages/privacy.md"
     viewContext
   |> Handler.flatten
   |> get "/info/privacy"
 
 let private about viewContext =
-  mdPage "About us" "content/infoPages/about.md" viewContext
+  mdPage "About us" "infoPages/about.md" viewContext
   |> Handler.flatten
   |> get "/info/about"
 
 let private inkGuide viewContext =
   mdPage
     "The Ink cheat sheet"
-    "content/infoPages/a_guide_to_ink.md"
+    "infoPages/a_guide_to_ink.md"
     viewContext
   |> Handler.flatten
   |> get "/info/ink_guide"
@@ -71,7 +60,7 @@ let private inkGuide viewContext =
 let footer: Handler<XmlNode, HttpHandler> =
   handler {
     let! markdown =
-      mdToHtml "content/infoPages/footer_text.md"
+      mdToHtml "infoPages/footer_text.md"
 
     return
       B.content

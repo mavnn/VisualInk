@@ -1,6 +1,7 @@
 import htmx from 'htmx.org';
 import 'idiomorph/htmx';
 import { EditorView, basicSetup } from 'codemirror';
+import { EditorState } from "@codemirror/state"
 import { linter, lintGutter } from '@codemirror/lint'
 import { CompletionContext, autocompletion, snippetCompletion } from "@codemirror/autocomplete"
 import { InkLanguageSupport } from './lezer_ink'
@@ -112,6 +113,24 @@ function getEditor() {
         return editor;
 }
 
+function addExampleViewer() {
+        let doc = htmx.find('#example-text')?.textContent!;
+        let viewerBox = htmx.find('#example-viewer')!
+        if (viewerBox.childNodes.length > 0) { return }
+
+        new EditorView({
+                parent: document.querySelector("#example-viewer")!,
+                doc,
+                extensions: [
+                        basicSetup,
+                        InkLanguageSupport,
+                        EditorState.readOnly.of(true),
+                        EditorView.editable.of(false),
+                        EditorView.contentAttributes.of({ tabindex: "0" })
+                ]
+        })
+}
+
 function addText(text: string) {
         let selection = editor?.state.selection.main!
         editor?.dispatch({ changes: [{ from: selection.from, to: selection.to, insert: text }] })
@@ -134,9 +153,13 @@ function startMusic(audioElement: HTMLAudioElement) {
 }
 
 htmx.onLoad(function() {
-        let audio = document.getElementById('audio-background-music')! as HTMLAudioElement
+        let audio = document.getElementById('audio-background-music') as HTMLAudioElement
         if (audio) {
                 startMusic(audio)
+        }
+        let exampleViewer = document.getElementById('example-viewer')
+        if (exampleViewer) {
+                addExampleViewer()
         }
 })
 

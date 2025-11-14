@@ -1,7 +1,6 @@
 module VisualInk.Server.Playthrough
 
 open Marten
-open Marten.Linq.MatchesSql
 open Microsoft.Extensions.Logging
 open Falco
 open Falco.Markup
@@ -608,7 +607,7 @@ let startPost viewContext =
 
 let startPublishedGet viewContext =
   handler {
-    let! route = Handler.fromCtx (Request.getRoute)
+    let! route = Handler.fromCtx Request.getRoute
     let slug = route.GetString "slug"
 
     let! script =
@@ -648,12 +647,48 @@ let startPublishedGet viewContext =
   |> Handler.flatten
   |> get "/published/{slug}"
 
+let startExampleGet viewContext =
+  handler {
+    let! route = Handler.fromCtx Request.getRoute
+    let filename = route.GetString "filename"
+    let! script = getExampleScript $"{filename}.ink"
+
+    let! id =
+      start
+        script
+        (script.writerId
+         |> System.Guid.Parse
+         |> RunAsPublisher)
+
+    printfn "Started playthrough"
+
+    let! playthrough = load id
+
+    printfn "Creating view"
+
+    let! html =
+      currentView
+        (viewContext.skeletalTemplate
+          playthrough.steps.currentStep.gameTitle)
+        id
+        playthrough.steps
+
+    printfn "Responding"
+
+    return
+      Response.withHxPushUrl $"/playthrough/{id}"
+      >> Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> get "/examples/{filename}"
+
 module Service =
   let endpoints viewContext =
     [ stepGet viewContext
       stepPost viewContext
       startPost viewContext
-      startPublishedGet viewContext ]
+      startPublishedGet viewContext
+      startExampleGet viewContext ]
 
   let addService: AddService =
     fun _ sc ->

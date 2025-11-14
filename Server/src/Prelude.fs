@@ -51,13 +51,14 @@ module Handler =
   let map f x = bind (fun v -> return' (f v)) x
 
   let mapError f x =
-      fun (ctx : HttpContext) ->
-          task {
-            let! result = x ctx
-            match result with
-            | Error e -> return Error (f e)
-            | Ok v -> return Ok v
-          }
+    fun (ctx: HttpContext) ->
+      task {
+        let! result = x ctx
+
+        match result with
+        | Error e -> return Error(f e)
+        | Ok v -> return Ok v
+      }
 
   let collect f xs =
     Seq.fold
@@ -122,8 +123,7 @@ module Handler =
       | None -> return' None)
 
   let mapOption f handlerOption =
-      handlerOption
-      |> map (Option.map f)
+    handlerOption |> map (Option.map f)
 
   let flatten
     (handler: Handler<HttpHandler, HttpHandler>)
@@ -278,18 +278,38 @@ let serializeJson =
   System.Text.Json.JsonSerializer.Serialize
 
 module Slug =
-    open Sqids
-    let sqids = SqidsEncoder<uint64>(SqidsOptions ( Alphabet = "hC5opuPZH3B2jML1t76wXmNDQYJUAkRGKT4vFfq9Sx8EbcngdiyeVrWzas"))
+  open Sqids
 
-    let toGuid (sqid: string) =
-        sqids.Decode sqid
-        |> Seq.toArray
-        |> Array.collect System.BitConverter.GetBytes
-        |> System.Guid
+  let sqids =
+    SqidsEncoder<uint64>(
+      SqidsOptions(
+        Alphabet =
+          "hC5opuPZH3B2jML1t76wXmNDQYJUAkRGKT4vFfq9Sx8EbcngdiyeVrWzas"
+      )
+    )
 
-    let fromGuid (guid : System.Guid) =
-        let bytes = guid.ToByteArray()
-        let front = System.BitConverter.ToUInt64 bytes.[0..7]
-        let back = System.BitConverter.ToUInt64 bytes.[8..15]
-        sqids.Encode [|front;back|]
+  let toGuid (sqid: string) =
+    sqids.Decode sqid
+    |> Seq.toArray
+    |> Array.collect System.BitConverter.GetBytes
+    |> System.Guid
 
+  let fromGuid (guid: System.Guid) =
+    let bytes = guid.ToByteArray()
+    let front = System.BitConverter.ToUInt64 bytes.[0..7]
+    let back = System.BitConverter.ToUInt64 bytes.[8..15]
+    sqids.Encode [| front; back |]
+
+module Content =
+  open System.IO
+
+  let getContentText path =
+    handler {
+      let! hostEnv = Handler.plug<IWebHostEnvironment, _> ()
+
+      return!
+        File.ReadAllTextAsync(
+          Path.Join(hostEnv.ContentRootPath, "content", path)
+        )
+        |> Handler.returnTask
+    }

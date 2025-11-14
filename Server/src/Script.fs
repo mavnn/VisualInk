@@ -503,22 +503,13 @@ let editGet viewContext =
 
 let demoGet viewContext =
   handler {
+    let! demoText =
+      Content.getContentText "examples/AloneInTheDark.ink"
+
     let demo =
       DemoEditor
-        {| title = "Trying out the Ink editor"
-           ink =
-            """
-Oh nice, an online Ink editor.
-
-* Which some {~pretty colours|syntax highlighting} going on!
-  -> also_error_reporting
-
-=== a_knot ===
-We get code folding for knots, too.
-
--> END
-                  """
-              .TrimStart() |}
+        {| title = "Alone in the dark"
+           ink = demoText |}
 
     let! view = editor demo
     let! template = viewContext.contextualTemplate
@@ -862,6 +853,51 @@ let lintPost =
   }
   |> Handler.flatten
   |> post "/script/lint"
+
+let getExampleScript filename =
+  handler {
+    let fakeUserId = System.Guid()
+
+    let! ink =
+      Content.getContentText (
+        System.IO.Path.Join("examples", filename)
+      )
+
+    let title =
+      let firstLine = ink.Split('\n', 2).[0]
+
+      if firstLine.StartsWith "#title " then
+        firstLine.Substring 7
+      else
+        filename
+
+    let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
+
+    let id = System.Guid()
+    let story = compile fileHandler title ink
+
+    match story with
+    | CompiledStory(story, stats) ->
+      let inkJson = story.ToJson()
+
+      let script =
+        { id = id
+          ink = ink
+          inkJson = inkJson
+          stats = stats
+          title = title
+          publishedUrl = None
+          writerId = fakeUserId.ToString() }
+
+      return script
+    // Save the actual script even if there are errors
+    // that will prevent it running
+    | CompilationErrors _ ->
+      return
+        failwithf
+          "Example file %s did not compile!"
+          filename
+  }
 
 let nav =
   _a
