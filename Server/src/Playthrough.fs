@@ -1,22 +1,30 @@
 module VisualInk.Server.Playthrough
 
 open Marten
+open Marten.Linq.MatchesSql
 open Microsoft.Extensions.Logging
 open Falco
 open Falco.Markup
 open Falco.Htmx
 open Falco.Routing
 open Microsoft.AspNetCore.Antiforgery
+open System.Text.Json.Serialization
+open System.Linq
 open Prelude
 open Script
 open View
 
 module B = Bulma
 
-[<CLIMutable>]
+[<JsonFSharpConverter>]
 type Choice = { index: int32; text: string }
 
-[<CLIMutable>]
+[<JsonFSharpConverter>]
+type RunAs =
+  | RunAsWriter
+  | RunAsPublisher of System.Guid
+
+[<JsonFSharpConverter(SkippableOptionFields = SkippableOptionFields.Always)>]
 type Step =
   { gameTitle: string
     scriptId: System.Guid
@@ -29,14 +37,15 @@ type Step =
     choices: Choice array
     finished: bool
     animation: string option
-    stepCount: int }
+    stepCount: int
+    runAs: RunAs }
 
-[<CLIMutable>]
+[<JsonFSharpConverter>]
 type Steps =
   { currentStep: Step
     previousStep: Step }
 
-[<CLIMutable>]
+[<JsonFSharpConverter>]
 type PlaythroughDocument =
   { id: System.Guid
     state: string
@@ -126,26 +135,30 @@ let make script =
   }
 
 let load (guid: System.Guid) =
-  Handler.plug<IDocumentStore, _> ()
-  |> Handler.bind (fun docStore ->
-    Handler.returnTask (
-      docStore
-        .QuerySession()
-        .LoadAsync<PlaythroughDocument>
-        guid
-    ))
-  |> Handler.map (fun doc -> doc.steps)
+  handler {
+    let! user = User.getSessionUser ()
+
+    return!
+      match user with
+      | Some _ ->
+        DocStore.load<PlaythroughDocument, _, _> guid
+      | None ->
+        DocStore.loadShared<PlaythroughDocument, _, _> guid
+  }
+  |> Handler.ofOption (
+    Response.withStatusCode 404 >> Response.ofEmpty
+  )
+
+let private getRunnerSession () =
+  User.getSessionUser ()
+  |> Handler.bind (fun u ->
+    match u with
+    | Some _ -> DocStore.startSession ()
+    | None -> DocStore.startSharedSession ())
 
 let cont (guid: System.Guid) choice =
   handler {
-    let! docStore = Handler.plug<IDocumentStore, _> ()
-    let session = docStore.LightweightSession()
-
-    let! doc =
-      Handler.returnTask (
-        session.LoadAsync<PlaythroughDocument> guid
-      )
-
+    let! doc = load guid
     let! story = make doc.script
     story.state.LoadJson doc.state
 
@@ -163,16 +176,18 @@ let cont (guid: System.Guid) choice =
       { currentStep = currentStep
         previousStep = previousStep }
 
+    use! session = getRunnerSession ()
+
     session.Update
       { doc with
           state = story.state.ToJson()
           steps = steps }
 
-    do! session.SaveChangesAsync() |> Handler.returnTask'
+    do! DocStore.saveChanges session
     return steps
   }
 
-let start script =
+let private start script runAs =
   handler {
     let guid = System.Guid.NewGuid()
     let! story = make script
@@ -191,10 +206,10 @@ let start script =
         choices = [||]
         finished = false
         animation = None
-        stepCount = 0 }
+        stepCount = 0
+        runAs = runAs }
 
-    let! documentStore = Handler.plug<IDocumentStore, _> ()
-    let session = documentStore.LightweightSession()
+    use! session = getRunnerSession ()
 
     session.Insert
       { id = guid
@@ -204,7 +219,7 @@ let start script =
           { currentStep = step
             previousStep = step } }
 
-    do! session.SaveChangesAsync() |> Handler.returnTask'
+    do! DocStore.saveChanges session
 
     let! _ = cont guid None
 
@@ -271,7 +286,11 @@ let private makeAudio steps =
       match
         steps.currentStep.finished, steps.currentStep.music
       with
-      | false, Some music -> StoryAssets.findMusic music
+      | false, Some music ->
+        match steps.currentStep.runAs with
+        | RunAsWriter -> StoryAssets.findMusic music
+        | RunAsPublisher guid ->
+          StoryAssets.findMusicAs guid music
       | _ -> Handler.return' None
 
     let audioSrc =
@@ -309,7 +328,11 @@ let private stepToSpeakerImage animation step =
     |> Handler.return'
   | true, Some char, emote ->
     handler {
-      let! speaker = StoryAssets.findSpeaker char
+      let! speaker =
+        match step.runAs with
+        | RunAsPublisher guid ->
+          StoryAssets.findSpeakerAs guid char
+        | RunAsWriter -> StoryAssets.findSpeaker char
 
       let src =
         match speaker, emote with
@@ -362,7 +385,7 @@ let private makeSpeakerImage previous step =
 
 let private makeChoiceBox guid step =
   handler {
-    let! token = Handler.getCsrfToken()
+    let! token = Handler.getCsrfToken ()
     let choiceMenu = makeChoiceMenu guid step token
 
     return
@@ -390,7 +413,7 @@ let private makeMessageBox step =
 
 let makeContinueOverlay guid step =
   handler {
-    let! token = Handler.getCsrfToken()
+    let! token = Handler.getCsrfToken ()
 
     return
       if not step.finished && step.choices.Length = 0 then
@@ -416,14 +439,20 @@ let makeBackgroundUnderlay step =
 
         match nameAndTag with
         | [| name; tag |] ->
-          StoryAssets.findScene name
+          (match step.runAs with
+           | RunAsWriter -> StoryAssets.findScene name
+           | RunAsPublisher guid ->
+             StoryAssets.findSceneAs guid name)
           |> Handler.map (
             Option.bind (fun s ->
               s.tags |> List.tryFind (fun t -> t.tag = tag))
           )
           |> Handler.map (Option.map (fun t -> t.url))
         | [| name |] ->
-          StoryAssets.findScene name
+          (match step.runAs with
+           | RunAsWriter -> StoryAssets.findScene name
+           | RunAsPublisher guid ->
+             StoryAssets.findSceneAs guid name)
           |> Handler.map (Option.map (fun s -> s.url))
         | _ -> Handler.return' None
       | None -> Handler.return' None
@@ -499,14 +528,14 @@ let stepGet viewContext =
     let! requestData = Handler.fromCtx Request.getRoute
     let id = requestData.GetGuid "guid"
 
-    let! step = load id
+    let! playthrough = load id
 
     let! html =
       currentView
         (viewContext.skeletalTemplate
-          step.currentStep.gameTitle)
+          playthrough.steps.currentStep.gameTitle)
         id
-        step
+        playthrough.steps
 
     return! HxFragment "hero-story" html
   }
@@ -551,28 +580,72 @@ let startPost viewContext =
         Response.withStatusCode 404 >> Response.ofEmpty
       )
 
-    let! id = start script
+    let! id = start script RunAsWriter
 
-    let! step = load id
+    let! playthrough = load id
 
     let! html =
       currentView
         (viewContext.skeletalTemplate
-          step.currentStep.gameTitle)
+          playthrough.steps.currentStep.gameTitle)
         id
-        step
+        playthrough.steps
 
     return
-      Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
+      Response.withHxPushUrl $"/playthrough/{id}"
+      >> Response.ofHtml html
   }
   |> Handler.flatten
   |> post "/playthrough/start"
+
+let startPublishedGet viewContext =
+  handler {
+    let! route = Handler.fromCtx (Request.getRoute)
+    let slug = route.GetString "slug"
+
+    let! script =
+      DocStore.singleShared<Script, _> (fun q ->
+        q .Where(fun s -> s.id = Slug.toGuid slug)
+          .Where(fun s -> s.AnyTenant()))
+      |> Handler.ofOption (
+        Response.withStatusCode 404 >> Response.ofEmpty
+      )
+
+    let! id =
+      start
+        script
+        (script.writerId
+         |> System.Guid.Parse
+         |> RunAsPublisher)
+
+    printfn "Started playthrough"
+
+    let! playthrough = load id
+
+    printfn "Creating view"
+
+    let! html =
+      currentView
+        (viewContext.skeletalTemplate
+          playthrough.steps.currentStep.gameTitle)
+        id
+        playthrough.steps
+
+    printfn "Responding"
+
+    return
+      Response.withHxPushUrl $"/playthrough/{id}"
+      >> Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> get "/published/{slug}"
 
 module Service =
   let endpoints viewContext =
     [ stepGet viewContext
       stepPost viewContext
-      startPost viewContext ]
+      startPost viewContext
+      startPublishedGet viewContext ]
 
   let addService: AddService =
     fun _ sc ->

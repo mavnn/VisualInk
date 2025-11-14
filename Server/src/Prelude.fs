@@ -276,3 +276,20 @@ type ServiceEndpoints = string -> HttpEndpoint seq
 
 let serializeJson =
   System.Text.Json.JsonSerializer.Serialize
+
+module Slug =
+    open Sqids
+    let sqids = SqidsEncoder<uint64>(SqidsOptions ( Alphabet = "hC5opuPZH3B2jML1t76wXmNDQYJUAkRGKT4vFfq9Sx8EbcngdiyeVrWzas"))
+
+    let toGuid (sqid: string) =
+        sqids.Decode sqid
+        |> Seq.toArray
+        |> Array.collect System.BitConverter.GetBytes
+        |> System.Guid
+
+    let fromGuid (guid : System.Guid) =
+        let bytes = guid.ToByteArray()
+        let front = System.BitConverter.ToUInt64 bytes.[0..7]
+        let back = System.BitConverter.ToUInt64 bytes.[8..15]
+        sqids.Encode [|front;back|]
+

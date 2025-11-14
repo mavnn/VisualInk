@@ -17,13 +17,16 @@ module B = Bulma
 [<JsonFSharpConverter>]
 type ScriptStats = { words: int; choices: int }
 
-[<JsonFSharpConverter>]
+[<JsonFSharpConverter(SkippableOptionFields = SkippableOptionFields.Always)>]
 type Script =
   { id: System.Guid
     ink: string
     inkJson: string
     stats: ScriptStats option
-    title: string }
+    title: string
+    publishedUrl: string option
+    [<JsonIgnore>]
+    mutable writerId: string }
 
 type CompilationResult =
   | CompiledStory of Ink.Runtime.Story * ScriptStats option
@@ -141,6 +144,7 @@ let private getTemplate title =
 let create (input: ScriptTemplate) =
   handler {
     use! session = DocStore.startSession ()
+    let! user = User.ensureSessionUser ()
 
     let id = System.Guid.NewGuid()
     let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
@@ -155,7 +159,9 @@ let create (input: ScriptTemplate) =
           ink = input.ink
           inkJson = inkJson
           stats = stats
-          title = input.title }
+          title = input.title
+          publishedUrl = None
+          writerId = user.id.ToString() }
 
       session.Insert<Script> script
       do! session.SaveChangesAsync() |> Handler.returnTask'
@@ -168,7 +174,9 @@ let create (input: ScriptTemplate) =
           ink = input.ink
           inkJson = "{}"
           stats = stats
-          title = input.title }
+          title = input.title
+          publishedUrl = None
+          writerId = user.id.ToString() }
 
       session.Insert<Script> script
       do! DocStore.saveChanges session
@@ -205,20 +213,44 @@ let editor input =
       | DemoEditor de -> de.ink
       | UserEditor ue -> ue.ink
 
-    let runButton =
+    let controls =
       match input with
       | UserEditor existing ->
-        B.button
-          [ _id_ "run-button"
-            Hx.post "/playthrough/start"
-            HxMorph.morphOuterHtml
-            Hx.select "#page"
-            Hx.targetCss "#page"
-            _disabled_
-            _name_ "script"
-            _class_ "is-primary"
-            _value_ (existing.id.ToString()) ]
-          [ _text "Run" ]
+        B.buttons
+          []
+          [ [ _id_ "run-button"
+              Hx.post "/playthrough/start"
+              HxMorph.morphOuterHtml
+              Hx.select "#page"
+              Hx.targetCss "#page"
+              _disabled_
+              _name_ "script"
+              _class_ B.Mods.isPrimary
+              _value_ (existing.id.ToString()) ],
+            [ _text "Run" ]
+            match existing.publishedUrl with
+            | None ->
+              [ _id_ "publish"
+                Hx.confirm
+                  "Are you sure? This makes your game available publicly."
+                Hx.select "#page"
+                Hx.targetCss "#page"
+                Hx.post "/script/publish"
+                _name_ "publish"
+                _class_ B.Mods.isDanger
+                _value_ (existing.id.ToString()) ],
+              [ _text "Publish" ]
+            | Some _ ->
+              [ _id_ "unpublish"
+                Hx.confirm
+                  "Are you sure? Your game will be unavailable until you publish it again."
+                Hx.select "#page"
+                Hx.targetCss "#page"
+                Hx.post "/script/unpublish"
+                _name_ "unpublish"
+                _class_ B.Mods.isDanger
+                _value_ (existing.id.ToString()) ],
+              [ _text "Unpublish" ] ]
       | DemoEditor _ ->
         B.button
           [ _disabled_ ]
@@ -246,6 +278,20 @@ let editor input =
                       _onblur_
                         "fe.callLinter(fe.getEditor());"
                       _placeholder_ "Your script title" ] ] })
+        match input with
+        | DemoEditor _ ->
+          B.notification
+            [ _class_ B.Mods.isInfo ]
+            [ _text
+                "Hi! This page exists to let people play with Visual Inks script editor without having to create an account, but just so you know, until you sign up nothing will actually be saved or be able to run." ]
+        | UserEditor { publishedUrl = Some url } ->
+          B.notification
+            [ _class_ B.Mods.isPrimary ]
+            [ _text "This script is published at "
+              _a [ _href_ url ] [ _text url ]
+              _text
+                " and any changes you make will be immediately visible." ]
+        | UserEditor _ -> _text ""
         _div [ _hidden_; _id_ "last-saved" ] [ _text ink ]
         _div
           [ _class_
@@ -263,7 +309,7 @@ let editor input =
               "field is-grouped is-grouped-centered is-flex-grow-0" ]
           [ _div
               [ _class_ "control" ]
-              [ _div [ _class_ "control" ] [ runButton ] ] ] ]
+              [ _div [ _class_ "control" ] [ controls ] ] ] ]
 
   }
 
@@ -511,12 +557,18 @@ let editPost viewContext =
       | CompiledStory(story, stats) -> story.ToJson(), stats
       | CompilationErrors(_, stats) -> "{}", stats
 
+    let! existingScript =
+      load id
+      |> Handler.ofOption (
+        Response.withStatusCode 400 >> Response.ofEmpty
+      )
+
     let script =
-      { id = id
-        ink = input.ink
-        inkJson = inkJson
-        stats = stats
-        title = input.title }
+      { existingScript with
+          ink = input.ink
+          inkJson = inkJson
+          stats = stats
+          title = input.title }
 
     do! save script
 
@@ -641,6 +693,84 @@ let editDelete viewContext =
   |> Handler.flatten
   |> delete "/script/{guid:guid}"
 
+let createPublishedUrl script =
+  handler {
+    let slug = Slug.fromGuid script.id
+
+    return!
+      Handler.fromCtx (fun ctx ->
+        let scheme =
+          if ctx.Request.IsHttps then
+            "https://"
+          else
+            "http://"
+
+        $"{scheme}{ctx.Request.Host.Value}/published/{slug}")
+  }
+
+let publishPost viewContext =
+  handler {
+    let! scriptId =
+      Handler.formDataOrFail
+        (Response.withStatusCode 400 >> Response.ofEmpty)
+        (fun fd -> fd.TryGetGuid "publish")
+
+    let! existing =
+      load scriptId
+      |> Handler.ofOption (
+        Response.withStatusCode 400 >> Response.ofEmpty
+      )
+
+    let! session = DocStore.startSession ()
+    let! publishedUrl = createPublishedUrl existing
+
+    let updated =
+      { existing with
+          publishedUrl = Some publishedUrl }
+
+    session.Update updated
+    do! DocStore.saveChanges session
+
+    let! template = viewContext.contextualTemplate
+
+    let! view = scriptManager updated
+    let html = template "Edit Script" view
+
+    return! HxFragment "body" html
+  }
+  |> Handler.flatten
+  |> post "/script/publish"
+
+let unpublishPost viewContext =
+  handler {
+    let! scriptId =
+      Handler.formDataOrFail
+        (Response.withStatusCode 400 >> Response.ofEmpty)
+        (fun fd -> fd.TryGetGuid "unpublish")
+
+    let! existing =
+      load scriptId
+      |> Handler.ofOption (
+        Response.withStatusCode 400 >> Response.ofEmpty
+      )
+
+    let! session = DocStore.startSession ()
+
+    let updated = { existing with publishedUrl = None }
+
+    session.Update updated
+    do! DocStore.saveChanges session
+
+    let! template = viewContext.contextualTemplate
+
+    let! view = scriptManager updated
+    let html = template "Edit Script" view
+
+    return! HxFragment "body" html
+  }
+  |> Handler.flatten
+  |> post "/script/unpublish"
+
 type LintResponseItem =
   { line: int32
     message: string
@@ -703,25 +833,30 @@ let lintPost =
         |> Seq.map (inkToResponse json.title)
         |> Seq.toList
 
-    do!
-      if referrer.Length > 36 then
-        match
-          System.Guid.TryParse(
-            referrer.Substring(referrer.Length - 36, 36)
+    if referrer.Length > 36 then
+      match
+        System.Guid.TryParse(
+          referrer.Substring(referrer.Length - 36, 36)
+        )
+      with
+      | true, id ->
+        let! existingScript =
+          load id
+          |> Handler.ofOption (
+            Response.withStatusCode 400 >> Response.ofEmpty
           )
-        with
-        | true, id ->
-          let script =
-            { id = id
+
+        let script =
+          { existingScript with
               ink = json.ink
               inkJson = inkJson
               stats = stats
               title = json.title }
 
-          save script
-        | false, _ -> Handler.return' ()
-      else
-        Handler.return' ()
+        do! save script
+      | false, _ -> do ()
+    else
+      do ()
 
     return Response.ofJson response
   }
@@ -744,6 +879,8 @@ module Service =
       editPost viewContext
       editDelete viewContext
       listGet viewContext
+      publishPost viewContext
+      unpublishPost viewContext
       lintPost ]
 
   let addService: AddService =
@@ -752,5 +889,9 @@ module Service =
       |> ignore
 
       sc.ConfigureMarten(fun (storeOpts: StoreOptions) ->
-        storeOpts.Schema.For<Script>().MultiTenanted()
+        storeOpts.Schema
+          .For<Script>()
+          .MultiTenanted()
+          .Metadata(fun m ->
+            m.TenantId.MapTo(fun x -> x.writerId))
         |> ignore)

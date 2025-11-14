@@ -16,6 +16,7 @@ module Mods =
   let isDanger = "is-danger"
   let isPrimary = "is-primary"
   let isLink = "is-link"
+  let isInfo = "is-info"
   let help = "help"
 
 let content attr content =
@@ -86,6 +87,11 @@ let select
 
 let button attr content =
   _button (Attr.merge [ _class_ "button" ] attr) content
+
+let buttons attr buttons =
+    buttons
+    |> List.map (fun (attr, content) -> button attr content)
+    |> _div (Attr.merge [_class_ "buttons"] attr) 
 
 let image figure img =
   _figure

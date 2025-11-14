@@ -12,7 +12,6 @@ open Falco.Security
 open System.Text.Json.Serialization
 open System.Linq
 open Microsoft.Extensions.Logging
-open Marten
 open Microsoft.Extensions.Hosting
 
 module B = Bulma
@@ -74,27 +73,46 @@ module private Queries =
             )))
     }
 
-  let assetByName (name: string) (category: AssetCategory) =
-    DocStore.single<AssetMetadata> (fun q ->
-      q
-        .Where(fun a -> a.name = name)
-        .Where(fun a ->
-          a.MatchesSql(
-            "data ->> 'category' = ?",
-            sprintf "%A" category
-          )))
-    |> Handler.bind (fun a ->
-      match a with
-      | Some _ -> Handler.return' a
-      | None ->
+  let assetByNameAs
+    (tenantId: System.Guid)
+    (name: string)
+    (category: AssetCategory)
+    =
+    handler {
+      let! logger = Handler.plug<ILogger<AssetMetadata>, _>()
+      let tenantStr = tenantId.ToString()
+
+      logger.LogDebug("Querying owner tenant for {category} named {name}", category, name)
+      let! asset =
         DocStore.singleShared<AssetMetadata, _> (fun q ->
           q
+            .Where(fun a -> a.TenantIsOneOf tenantStr)
             .Where(fun a -> a.name = name)
             .Where(fun a ->
               a.MatchesSql(
                 "data ->> 'category' = ?",
                 sprintf "%A" category
-              ))))
+              )))
+
+      return!
+        match asset with
+        | Some _ -> Handler.return' asset
+        | None ->
+          logger.LogDebug("Querying default tenant for {category} named {name}", category, name)
+          DocStore.singleShared<AssetMetadata, _> (fun q ->
+            q
+              .Where(fun a -> a.name = name)
+              .Where(fun a ->
+                a.MatchesSql(
+                  "data ->> 'category' = ?",
+                  sprintf "%A" category
+                )))
+    }
+
+  let assetByName name category =
+    User.ensureSessionUser ()
+    |> Handler.bind (fun user ->
+      assetByNameAs user.id name category)
 
   // Call this when a url is removed from the assets metadata
   // store so we can check if the file pointed at can be deleted.
@@ -380,7 +398,7 @@ let private deleteSubAsset subAssetName category =
 type PreseedAssets
   (
     hostEnvironment: IWebHostEnvironment,
-    docStore: IDocumentStore,
+    docStore: Marten.IDocumentStore,
     logger: ILogger<PreseedAssets>
   ) =
   interface IHostedService with
@@ -407,18 +425,17 @@ type PreseedAssets
             Directory.EnumerateFiles dir
             |> Seq.filter (fun f ->
               Path.GetExtension f <> ""
-              && not (
-                (Path.GetFileName f).StartsWith "."
-              ))
+              && not ((Path.GetFileName f).StartsWith "."))
             |> Seq.map (fun f -> category, f))
 
 
         let getHrefForFilePath filePath =
-            "/"
-            + Path.GetRelativePath(
-              hostEnvironment.WebRootPath,
-              filePath
-            )
+          "/"
+          + Path.GetRelativePath(
+            hostEnvironment.WebRootPath,
+            filePath
+          )
+
         let assetsDirectory = getAssestsDirectory ()
         use session = docStore.LightweightSession()
 
@@ -464,16 +481,21 @@ type PreseedAssets
                 |> Async.RunSynchronously
                 |> getHrefForFilePath
 
-              let subAssetsDir = Path.Join(Path.GetDirectoryName file, name)
+              let subAssetsDir =
+                Path.Join(Path.GetDirectoryName file, name)
 
               let subAssets =
                 if Directory.Exists subAssetsDir then
-                  logger.LogInformation ("Sub asset directory {dir} found", subAssetsDir)
+                  logger.LogInformation(
+                    "Sub asset directory {dir} found",
+                    subAssetsDir
+                  )
+
                   Directory.EnumerateFiles subAssetsDir
                   |> Seq.filter (fun f ->
                     Path.GetExtension f <> ""
                     && not (
-                        (Path.GetFileName f).StartsWith "."
+                      (Path.GetFileName f).StartsWith "."
                     ))
                   |> Seq.map (fun f ->
                     use steam = File.OpenRead f
@@ -493,7 +515,11 @@ type PreseedAssets
                       url = address })
                   |> Seq.toList
                 else
-                  logger.LogInformation ("No sub asset directory {dir} found", subAssetsDir)
+                  logger.LogInformation(
+                    "No sub asset directory {dir} found",
+                    subAssetsDir
+                  )
+
                   []
 
               tenantSession.Insert<AssetMetadata>
@@ -537,18 +563,22 @@ let findSpeakers () =
       |> List.distinctBy (fun s -> s.name)
   }
 
+let private assetToSpeaker (asset: AssetMetadata) =
+  { name = asset.name
+    url = asset.url
+    emotes =
+      asset.subAssets
+      |> List.map (fun sa ->
+        { emote = sa.name; url = sa.url })
+    assetOwner = asset.owner }
+
 let findSpeaker name =
   Queries.assetByName name SpeakerAsset
-  |> Handler.map (
-    Option.map (fun asset ->
-      { name = asset.name
-        url = asset.url
-        emotes =
-          asset.subAssets
-          |> List.map (fun sa ->
-            { emote = sa.name; url = sa.url })
-        assetOwner = asset.owner })
-  )
+  |> Handler.map (Option.map assetToSpeaker)
+
+let findSpeakerAs guid name =
+  Queries.assetByNameAs guid name SpeakerAsset
+  |> Handler.map (Option.map assetToSpeaker)
 
 let private listSpeakersView viewContext =
   handler {
@@ -657,7 +687,8 @@ let private listSpeakersView viewContext =
             content = [ B.content [] [ _text s.name ] ] }
         |> B.encloseAttr
           _a
-          [ _href_ $"/assets/speaker/{System.Uri.EscapeDataString s.name}" ]
+          [ _href_
+              $"/assets/speaker/{System.Uri.EscapeDataString s.name}" ]
         |> B.enclose B.cell)
       |> page
       |> template "Speakers"
@@ -818,7 +849,8 @@ let private postSpeaker =
 
     let redirect =
       match formData.emote with
-      | Some _ -> $"/assets/speaker/{System.Uri.EscapeDataString formData.name}"
+      | Some _ ->
+        $"/assets/speaker/{System.Uri.EscapeDataString formData.name}"
       | None -> "/assets/speaker"
 
     return
@@ -845,7 +877,8 @@ let private deleteSpeakerEmote =
     do! deleteSubAsset (path.GetString "emote") SpeakerAsset
 
     return
-      Response.withHxRedirect $"/assets/speaker/{System.Uri.EscapeDataString name}"
+      Response.withHxRedirect
+        $"/assets/speaker/{System.Uri.EscapeDataString name}"
       >> Response.ofEmpty
   }
   |> Handler.flatten
@@ -859,7 +892,7 @@ let private listSpeakers viewContext =
 let getSpeaker viewContext =
   handler {
     let! route = Handler.fromCtx Request.getRoute
-    let name =  route.GetString "name"
+    let name = route.GetString "name"
     return! getSpeakerView name viewContext
   }
   |> Handler.flatten
@@ -897,6 +930,10 @@ let findScene name =
   Queries.assetByName name SceneAsset
   |> Handler.map (Option.map SceneImages.FromAssetMetadata)
 
+let findSceneAs guid name =
+  Queries.assetByNameAs guid name SceneAsset
+  |> Handler.map (Option.map SceneImages.FromAssetMetadata)
+
 let private postScene =
   handler {
     let! formData =
@@ -924,7 +961,8 @@ let private postScene =
 
     let redirect =
       match formData.tag with
-      | Some _ -> $"/assets/scene/{System.Uri.EscapeDataString formData.name}"
+      | Some _ ->
+        $"/assets/scene/{System.Uri.EscapeDataString formData.name}"
       | None -> "/assets/scene"
 
     return
@@ -951,7 +989,8 @@ let private deleteSceneTag =
     do! deleteSubAsset (path.GetString "tag") SceneAsset
 
     return
-      Response.withHxRedirect $"/assets/scene/{System.Uri.EscapeDataString name}"
+      Response.withHxRedirect
+        $"/assets/scene/{System.Uri.EscapeDataString name}"
       >> Response.ofEmpty
   }
   |> Handler.flatten
@@ -1229,6 +1268,10 @@ let findAllMusic () =
 
 let findMusic name =
   Queries.assetByName name MusicAsset
+  |> Handler.map (Option.map Music.FromAssetMetadata)
+
+let findMusicAs guid name =
+  Queries.assetByNameAs guid name MusicAsset
   |> Handler.map (Option.map Music.FromAssetMetadata)
 
 let private postMusic =

@@ -41,6 +41,7 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Sqids" />
   </ItemGroup>
 
   <!-- Manually managed dependencies (the Ink nuget packages are out of date,

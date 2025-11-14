@@ -14,7 +14,12 @@
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="3.0.0" />
-    <PackageVersion Include="YoloDev.Expecto.TestSdk" Version="0.14.3" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageVersion Include="Sqids" Version="3.1.0" />
+    <PackageVersion Include="xunit.v3" Version="3.2.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageVersion>
   </ItemGroup>
 </Project>

@@ -2,7 +2,7 @@
 
 Building visual novels with Ink from Inkle.
 
-If you just want to _use_ Visual Ink, you're probably best off going to [the official server](https://visualink.mavnn.eu/). You can log in freely with a Google account, or with an invite code using username and password. (Email michael@mavnn.eu if you'd like an invite).
+If you just want to _use_ Visual Ink, you're probably best off going to [the official server](https://visualink.mavnn.eu/). You can log in with a Google account, or with a username and password.
 
 We're also running online courses with [Thinkers Meetup](https://www.thinkersmeetup.com/service-page/coding-games-with-a-story-ages-9-13), a long established and trusted provider of online courses for home educators and school enrichment.
 
