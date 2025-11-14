@@ -251,12 +251,16 @@ let private makeChoiceMenu guid step token =
           [ _text c.text ])
       |> Seq.toList
     | true, _ ->
+      let href =
+          match step.runAs with
+          | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
+          | RunAsPublisher _ -> "/"
       [ _a
           [ Hx.swapOuterHtml
             Hx.select "#page"
             Hx.targetCss "#page"
             _class_ "button is-link is-fullwidth"
-            _href_ $"/script/{step.scriptId.ToString()}" ]
+            _href_ href ]
           [ _text "The End" ] ]
 
   _div
@@ -478,12 +482,16 @@ let makeBackgroundUnderlay step =
   }
 
 let private closeButton step =
+  let href =
+      match step.runAs with
+      | RunAsPublisher _ -> "/"
+      | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
   B.delete
     [ _class_ "m-2 is-medium"
       Hx.swapOuterHtml
       Hx.select "#page"
       Hx.targetCss "#page"
-      Hx.get $"/script/{step.scriptId.ToString()}"
+      Hx.get href
       _style_
         "position: absolute; top: 0; right: 0; z-index: 200;" ]
 
