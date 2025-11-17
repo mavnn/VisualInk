@@ -36,6 +36,7 @@ line {
   Stitch |
   Gather |
   conditionalLine |
+  BlockSequence |
   emptyLine
 }
 
@@ -152,6 +153,17 @@ blockTail {
 BlockConditionCase { caseOpener expression ":" (ContentLine | endOfLine) }
 caseOpener[@dynamicPrecedence=1] { ~case opener<"-"> }
 conditionalLine { !keyword BlockConditional endOfLine }
+
+BlockSequence {
+  "{" ~bracket blockOpen blockSequenceKeyword ":" endOfLine
+  (BlockSequenceItem | ContentLine)+
+  "}" endOfLine
+}
+BlockSequenceItem { caseOpener ContentLine }
+
+blockSequenceKeyword {
+  kw<"stopping"> | kw<"shuffle"> | kw<"cycle"> | kw<"once">
+}
 
 InlineSequence {
   "{" ~bracket inlineSequenceOpen SequenceTypeMarker? pipeSep1<sequenceContent> "}"
