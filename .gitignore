@@ -18,3 +18,4 @@ local_services/pg/
 node_modules
 private_*
 .env
+/Frontend/src/generated
