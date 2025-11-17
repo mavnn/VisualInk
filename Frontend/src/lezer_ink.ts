@@ -61,6 +61,8 @@ export const InkLanguage = LRLanguage.define(
                                         _function: t.keyword,
                                         Stitch: t.keyword,
                                         Gather: t.keyword,
+                                        "InlineSequence BlockSequence": t.controlKeyword,
+                                        SequenceContent: t.content,
                                         "{ } < > =": t.keyword
                                 })
                         ]
