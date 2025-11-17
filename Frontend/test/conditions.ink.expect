@@ -1,6 +1,6 @@
 Script(
-  Choice(ChoiceMarker, Label(Identifier), Condition(BooleanLiteral), Divert(DivertArrow, Target)),
-  Choice(ChoiceMarker, Condition(Target, OrOp, StringLiteral), Divert(DivertArrow, Target)),
-  Choice(ChoiceMarker, Condition(Target, OrOp, FunctionCall(Target, Number, StringLiteral)), Condition(Target, ComparisonOp, Number), Divert(DivertArrow, Target)),
-  Choice(ChoiceMarker, EscapedChar, Dynamic)
+  OnceOnlyChoice(BracketedName, ChoiceCondition(Bool(true)), Divert(DivertArrow, DivertTarget(Path))),
+  OnceOnlyChoice(ChoiceCondition(ExpressionAndOr(ExpressionVariableReference(Name),String)),WeaveBracket,Divert(DivertArrow,DivertTarget(Path))),
+  OnceOnlyChoice(ChoiceCondition(ExpressionAndOr(ExpressionVariableReference(Name),ExpressionFunctionCall(Name,Int,String))),ChoiceCondition(ExpressionComparison(ExpressionVariableReference(Name),Float)),WeaveBracket,Divert(DivertArrow,DivertTarget(Path))),
+  OnceOnlyChoice(Conditional(ExpressionVariableReference(Name)), ChoiceTag)
 )

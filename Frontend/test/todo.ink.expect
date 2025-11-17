@@ -1,1 +1,6 @@
-Script(Todo,Choice(ChoiceMarker))
+Script(
+  ContentLine,
+  ContentLine,
+  AuthorWarning,
+  ContentLine
+)

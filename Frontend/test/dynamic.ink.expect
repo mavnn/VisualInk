@@ -1,8 +1,8 @@
 Script(
-  Dynamic(Pipe),
-  Dynamic(Pipe,Pipe,Pipe),
-  Divert(DivertArrow,Target),
-  Dynamic(DynamicTypeMarker, Divert(DivertArrow,Target), Pipe, Divert(DivertArrow,Target)),
-  Dynamic(Pipe,Dynamic(Pipe)),
-  Dynamic(DynamicTypeMarker,Pipe,Pipe,Pipe,Pipe,Divert(DivertArrow,Target))
+  ContentLine(InlineSequence(Pipe)),
+  ContentLine(InlineSequence(Pipe,Pipe,Pipe),Divert(DivertArrow,DivertTarget(Path))),
+  ContentLine(InlineSequence(SequenceTypeMarker,Divert(DivertArrow,DivertTarget(Path)),Pipe,Divert(DivertArrow,DivertTarget(Path)))),
+  ContentLine(InlineSequence(Pipe,InlineSequence(SequenceTypeMarker, Pipe))),
+  ContentLine(InlineSequence(SequenceTypeMarker,Pipe,Pipe,Pipe,Pipe,Divert(DivertArrow,DivertTarget(Path)))),
+  ContentLine(Conditional(ExpressionVariableReference(Name)))
 )

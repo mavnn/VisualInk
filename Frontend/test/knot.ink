@@ -1,7 +1,7 @@
 == knot
 ========= other_knöt ========
 
-=== Knot ===
+=== Knot(ref Arg, Other) ===
 
 = with_stitch
 

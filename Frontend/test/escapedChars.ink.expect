@@ -1,1 +1,1 @@
-Script(EscapedChar, Divert(DivertArrow, Target))
+Script(ContentLine(Divert(DivertArrow, DivertTarget(Path))))

@@ -4,12 +4,13 @@
   "description": "Frontend JS for VisualInk",
   "main": "bin/Frontend.js",
   "scripts": {
-    "build-js": "rollup -c",
-    "watch-js": "rollup -cw --no-watch.clearScreen",
+    "pre-gen": "mkdir -p src/generated && lezer-generator src/syntax.grammar -o src/generated/parser",
+    "build-js": "npm run pre-gen && rollup -c",
+    "watch-js": "npm run pre-gen && rollup -cw --no-watch.clearScreen",
     "build-css": "sass --load-path=node_modules style.scss ../wwwroot/style.css",
     "watch-css": "npm run build-css -- --watch",
-    "test": "vitest",
-    "watch-test": "vitest --clearScreen=false"
+    "test": "npm run pre-gen && vitest",
+    "watch-test": "npm run pre-gen && vitest --clearScreen=false"
   },
   "author": "Michael Newton",
   "types": "dist/index.d.ts",

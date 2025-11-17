@@ -1,1 +1,1 @@
-Script(Include, Tag(TagValue), Tag)
+Script(Include, ContentLine(Tag, Tag))

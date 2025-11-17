@@ -1,9 +1,9 @@
 import { InkLanguage } from "../src/lezer_ink"
-import {fileTests, testTree} from "@lezer/generator/dist/test"
+import { testTree} from "@lezer/generator/dist/test"
 import * as fs from "fs"
 import * as path from "path"
 import { fileURLToPath } from 'url';
-import { describe, it } from "vitest"
+import { it } from "vitest"
 
 let caseDir = path.dirname(fileURLToPath(import.meta.url))
 
@@ -22,6 +22,7 @@ for (let file of fs.readdirSync(caseDir)) {
   it("Ink file: " + name, () => {
     const ink = fs.readFileSync(path.join(caseDir, file), "utf8")
     const expected = fs.readFileSync(path.join(caseDir, file + ".expect"), "utf8")
-    testTree(InkLanguage.parser.parse(ink), expected)
+    const parsed = InkLanguage.parser.parse(ink)
+    testTree(parsed, expected)
   })
 }

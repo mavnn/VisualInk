@@ -1,1 +1,1 @@
-Script(Tag,Tag,Tag,Tag(TagValue),Choice(ChoiceMarker,Divert(DivertArrow,Target),Tag(TagValue)))
+Script(ContentLine(Tag), ContentLine(Tag,Tag),ContentLine(Tag),OnceOnlyChoice(ChoiceTag, Divert(DivertArrow,DivertTarget(Path))))

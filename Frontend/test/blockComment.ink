@@ -4,4 +4,6 @@ Stuff
   A multiline comment
 */
 
-More stuff with a #tag
+More stuff /*
+  commentary
+*/ with a

@@ -1,7 +1,7 @@
 Script(
-  Knot(Identifier),
-  Knot(Identifier),
-  Knot(Identifier),
-  Stitch(Identifier),
-  Knot(FunctionDeclaration(function, Identifier),FunctionArgs(Identifier))
+  Knot(Name),
+  Knot(Name),
+  Knot(Name, KnotArguments(ref, Name, Name)),
+  Stitch(Name),
+  Function(function,Name,KnotArguments(Name))
 )

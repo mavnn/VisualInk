@@ -1,1 +1,1 @@
-Script(VariableAssignment(Identifier,VarValue), Dynamic(DynamicTypeMarker, Pipe, Pipe), Tag(TagValue))
+Script(VariableAssignment(Name,String), ContentLine(InlineSequence(SequenceTypeMarker, Pipe, Pipe), Tag))
