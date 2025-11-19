@@ -37,7 +37,7 @@ export const InkLanguage = LRLanguage.define(
                                         Float: t.number,
                                         String: t.string,
                                         SequenceTypeMarker: t.operator,
-                                        Pipe: t.controlOperator,
+                                        Pipe: t.controlKeyword,
                                         Tag: t.labelName,
                                         LineComment: t.comment,
                                         Include: t.keyword,
