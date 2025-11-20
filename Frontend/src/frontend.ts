@@ -35,7 +35,7 @@ async function callLinter(view: EditorView) {
 
 const inkLinter = linter(callLinter)
 
-function tildeCompletions(context: CompletionContext) {
+function tildeFromDashCompletions(context: CompletionContext) {
         let word = context.matchBefore(/-(\w*)/)
         if ((!word || word.from == word.to) && !context.explicit)
                 return null
@@ -46,6 +46,20 @@ function tildeCompletions(context: CompletionContext) {
                         snippetCompletion('~speaker = "${name}"', { label: "-speaker", detail: "Change who is speaking" }),
                         snippetCompletion('~scene = "${name}"', { label: "-scene", detail: "Change the background scene" }),
                         snippetCompletion('~music = "${name}"', { label: "-music", detail: "Change the background music" }),
+                ]
+        }
+}
+
+function tildeCompletions(context: CompletionContext) {
+        let word = context.matchBefore(/~(\w*)/)
+        if ((!word || word.from == word.to) && !context.explicit)
+                return null
+        return {
+                from: word?.from ?? context.pos,
+                options: [
+                        snippetCompletion('~speaker = "${name}"', { label: "~speaker", detail: "Change who is speaking" }),
+                        snippetCompletion('~scene = "${name}"', { label: "~scene", detail: "Change the background scene" }),
+                        snippetCompletion('~music = "${name}"', { label: "~music", detail: "Change the background music" }),
                 ]
         }
 }
@@ -101,7 +115,16 @@ function addEditor() {
                 extensions: [basicSetup,
                         inkLinter,
                         lintGutter(),
-                        autocompletion({ override: [tildeCompletions, tagCompletions, sectionCompletions, inkCompletions] }),
+                        autocompletion({
+                                override:
+                                        [
+                                                tildeFromDashCompletions,
+                                                tildeCompletions,
+                                                tagCompletions,
+                                                sectionCompletions,
+                                                inkCompletions
+                                        ]
+                        }),
                         changeListener,
                         InkLanguageSupport],
         });
