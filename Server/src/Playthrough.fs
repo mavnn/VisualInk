@@ -155,7 +155,7 @@ let private getRunnerSession () =
     | Some _ -> DocStore.startSession ()
     | None -> DocStore.startSharedSession ())
 
-let cont (guid: System.Guid) choice =
+let rec cont (guid: System.Guid) choice =
   handler {
     let! doc = load guid
     let! story = make doc.script
@@ -183,7 +183,12 @@ let cont (guid: System.Guid) choice =
           steps = steps }
 
     do! DocStore.saveChanges session
-    return steps
+    // Skip forwards if the returned step has no content at all
+    // and there is no decision to make
+    if currentStep.choices.Length = 0 && System.String.IsNullOrWhiteSpace currentStep.text then
+      return! cont guid None
+    else
+      return steps
   }
 
 let private start script runAs =

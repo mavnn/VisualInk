@@ -14,7 +14,7 @@ VAR scene = ""
 
 Can I have a plain black coffee, please?
 
--> make_coffee ->
+-> make_coffee("Eddy") ->
 
 Eddy is waiting for you as you finish off.
 
@@ -31,7 +31,7 @@ Eddy is waiting for you as you finish off.
 ~speaker = "Elly"
 I'd like a coffee please!
 
--> make_coffee ->
+-> make_coffee("Elly") ->
 
 You turn back to Elly waiting at the bar.
 
@@ -40,26 +40,28 @@ Thank you!
 
 -> END
 
-=== make_coffee ===
+=== make_coffee(customer) ===
 ~speaker = "Narrator"
-You {start|continue} making Eddy's coffee
+You {start|continue} making {customer}'s coffee
 
-+ {not grind} [Add the beans to the french press] -> add_beans
-* [Grind the beans] -> grind
+* {not grind} [Add the beans to the french press] 
+  -> add_beans(customer)
+* [Grind the beans] 
+  -> grind(customer)
 * [Add boiling water to the french press]
-  -> add_water
-+ {grind} [Add the grinds to the french press]
-  -> add_grinds
+  -> add_water(customer)
+* {grind} [Add the grinds to the french press]
+  -> add_grinds(customer)
 + [Give up] ->->
 + {good_coffee} [You make another great coffee] ->->
 
-= grind
+= grind(customer)
 
 There's a loud noise as the beans are reduced to dust.
 
--> make_coffee
+-> make_coffee(customer)
 
-= add_water
+= add_water(customer)
 {
   - add_grinds:
     The water swirls the ground coffee <>
@@ -70,10 +72,10 @@ There's a loud noise as the beans are reduced to dust.
     water. The water begins to look like <>
     somebody has washed some dishes in it. -> bad_coffee
   - else:
-    -> make_coffee
+    -> make_coffee(customer)
 }
 
-= add_beans
+= add_beans(customer)
 
 {
   - add_water:
@@ -86,10 +88,10 @@ There's a loud noise as the beans are reduced to dust.
 
     After a moment of thought, you take them back out.
 
-    -> make_coffee
+    -> make_coffee(customer)
 }
 
-= add_grinds
+= add_grinds(customer)
 
 {
   - add_water:
@@ -106,7 +108,7 @@ There's a loud noise as the beans are reduced to dust.
   - else:
     The grinds sit at the bottom of the press, looking
     lonely.
-    -> make_coffee
+    -> make_coffee(customer)
 }
 
 = good_coffee
