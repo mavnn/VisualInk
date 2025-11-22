@@ -7,7 +7,7 @@ open Falco
 
 let getStore = Handler.plug<IDocumentStore, _>
 
-let queryShared<'a> logic =
+let queryShared<'a, 'e> logic: Handler<'a list, 'e> =
   handler {
     let! docStore = getStore ()
     use session = docStore.QuerySession()

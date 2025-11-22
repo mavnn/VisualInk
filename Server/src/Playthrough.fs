@@ -22,6 +22,7 @@ type Choice = { index: int32; text: string }
 type RunAs =
   | RunAsWriter
   | RunAsPublisher of System.Guid
+  | RunAsAnonymous
 
 [<JsonFSharpConverter(SkippableOptionFields = SkippableOptionFields.Always)>]
 type Step =
@@ -259,6 +260,7 @@ let private makeChoiceMenu guid step token =
           match step.runAs with
           | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
           | RunAsPublisher _ -> "/"
+          | RunAsAnonymous -> "/script/demo"
       [ _a
           [ Hx.swapOuterHtml
             Hx.select "#page"
@@ -298,7 +300,9 @@ let private makeAudio steps =
         match steps.currentStep.runAs with
         | RunAsWriter -> StoryAssets.findMusic music
         | RunAsPublisher guid ->
-          StoryAssets.findMusicAs guid music
+          StoryAssets.findMusicAs (Some guid) music
+        | RunAsAnonymous ->
+          StoryAssets.findMusicAs None music
       | _ -> Handler.return' None
 
     let audioSrc =
@@ -339,8 +343,10 @@ let private stepToSpeakerImage animation step =
       let! speaker =
         match step.runAs with
         | RunAsPublisher guid ->
-          StoryAssets.findSpeakerAs guid char
+          StoryAssets.findSpeakerAs (Some guid) char
         | RunAsWriter -> StoryAssets.findSpeaker char
+        | RunAsAnonymous -> 
+          StoryAssets.findSpeakerAs None char
 
       let src =
         match speaker, emote with
@@ -449,8 +455,9 @@ let makeBackgroundUnderlay step =
         | [| name; tag |] ->
           (match step.runAs with
            | RunAsWriter -> StoryAssets.findScene name
+           | RunAsAnonymous -> StoryAssets.findSceneAs None name
            | RunAsPublisher guid ->
-             StoryAssets.findSceneAs guid name)
+             StoryAssets.findSceneAs (Some guid) name)
           |> Handler.map (
             Option.bind (fun s ->
               s.tags |> List.tryFind (fun t -> t.tag = tag))
@@ -459,8 +466,9 @@ let makeBackgroundUnderlay step =
         | [| name |] ->
           (match step.runAs with
            | RunAsWriter -> StoryAssets.findScene name
+           | RunAsAnonymous -> StoryAssets.findSceneAs None name
            | RunAsPublisher guid ->
-             StoryAssets.findSceneAs guid name)
+             StoryAssets.findSceneAs (Some guid) name)
           |> Handler.map (Option.map (fun s -> s.url))
         | _ -> Handler.return' None
       | None -> Handler.return' None
@@ -490,6 +498,7 @@ let private closeButton step =
       match step.runAs with
       | RunAsPublisher _ -> "/"
       | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
+      | RunAsAnonymous -> "/script/demo"
   B.delete
     [ _class_ "m-2 is-medium"
       Hx.swapOuterHtml
@@ -630,11 +639,7 @@ let startPublishedGet viewContext =
          |> System.Guid.Parse
          |> RunAsPublisher)
 
-    printfn "Started playthrough"
-
     let! playthrough = load id
-
-    printfn "Creating view"
 
     let! html =
       currentView
@@ -642,8 +647,6 @@ let startPublishedGet viewContext =
           playthrough.steps.currentStep.gameTitle)
         id
         playthrough.steps
-
-    printfn "Responding"
 
     return
       Response.withHxPushUrl $"/playthrough/{id}"
@@ -665,11 +668,7 @@ let startExampleGet viewContext =
          |> System.Guid.Parse
          |> RunAsPublisher)
 
-    printfn "Started playthrough"
-
     let! playthrough = load id
-
-    printfn "Creating view"
 
     let! html =
       currentView
@@ -678,8 +677,6 @@ let startExampleGet viewContext =
         id
         playthrough.steps
 
-    printfn "Responding"
-
     return
       Response.withHxPushUrl $"/playthrough/{id}"
       >> Response.ofHtml html
@@ -687,13 +684,43 @@ let startExampleGet viewContext =
   |> Handler.flatten
   |> get "/examples/{filename}"
 
+let startPlaygroundPost viewContext =
+  handler {
+    let! ink =
+     Handler.formDataOrFail (Response.withStatusCode 400 >> Response.ofEmpty)
+      (fun fd -> fd.TryGetStringNonEmpty "ink")
+    let! script = makePlaygroundScript ink
+
+
+    let! id =
+      start
+        script
+        RunAsAnonymous
+
+    let! playthrough = load id
+
+    let! html =
+      currentView
+        (viewContext.skeletalTemplate
+          playthrough.steps.currentStep.gameTitle)
+        id
+        playthrough.steps
+
+    return
+      Response.withHxPushUrl $"/playthrough/{id}"
+      >> Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> post "/playground/playthrough"
+
 module Service =
   let endpoints viewContext =
     [ stepGet viewContext
       stepPost viewContext
       startPost viewContext
       startPublishedGet viewContext
-      startExampleGet viewContext ]
+      startExampleGet viewContext
+      startPlaygroundPost viewContext ]
 
   let addService: AddService =
     fun _ sc ->

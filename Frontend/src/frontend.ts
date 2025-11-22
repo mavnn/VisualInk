@@ -109,7 +109,22 @@ const changeListener = EditorView.updateListener.of((v) => {
 })
 
 function addEditor() {
-        let doc = htmx.find('#last-saved')?.textContent!;
+        let doc = ""
+        if (window.location.href.endsWith('demo')) {
+                console.log('Trying to load stored demo script')
+                let stored = localStorage.getItem('ink')
+                if (stored) {
+                        doc = stored
+                }
+                let storedTitle = localStorage.getItem('title')
+                let titleElement = document.getElementById('story-title')
+                if (storedTitle && titleElement) {
+                        titleElement.setAttribute('value', storedTitle)
+                }
+        }
+        if (doc.trim() === "") {
+                doc = htmx.find('#last-saved')?.textContent!;
+        }
         editor = new EditorView({
                 doc,
                 extensions: [basicSetup,

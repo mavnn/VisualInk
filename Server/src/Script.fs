@@ -253,8 +253,16 @@ let editor input =
               [ _text "Unpublish" ] ]
       | DemoEditor _ ->
         B.button
-          [ _disabled_ ]
-          [ _text "Sign up to run your script" ]
+          [ _id_ "run-button"
+            Attr.create "hx-on:htmx:config-request" "let ink = fe.getEditor().state.doc.toString(); event.detail.parameters.ink = ink; localStorage.setItem('ink', ink); localStorage.setItem('title', document.getElementById('story-title').value);"
+            Hx.post "/playground/playthrough"
+            Hx.select "#page"
+            Hx.targetCss "#page"
+            _disabled_
+            _name_ "Script"
+            _class_ B.Mods.isPrimary
+            ]
+          [ _text "Test your script" ]
 
     B.form
       token
@@ -283,7 +291,7 @@ let editor input =
           B.notification
             [ _class_ B.Mods.isInfo ]
             [ _text
-                "Hi! This page exists to let people play with Visual Inks script editor without having to create an account, but just so you know, until you sign up nothing will actually be saved or be able to run." ]
+                "Hi! This page exists to let people play with Visual Ink's script editor without having to create an account, but just so you know, until you sign up you won't be able to save anything or add your own speakers, scenes, or music." ]
         | UserEditor { publishedUrl = Some url } ->
           B.notification
             [ _class_ B.Mods.isPrimary ]
@@ -313,9 +321,9 @@ let editor input =
 
   }
 
-let scriptManager (existing: Script) =
+let scriptManager (editorInput: EditorInput) =
   handler {
-    let! form = editor (UserEditor existing)
+    let! form = editor editorInput
 
     let! speakers = StoryAssets.findSpeakers ()
 
@@ -464,7 +472,7 @@ let createPost viewContext =
     let! scriptTemplate = getTemplate input
     let! script = create scriptTemplate
 
-    let! view = scriptManager script
+    let! view = scriptManager (UserEditor script)
 
     let! template = viewContext.contextualTemplate
     let html = template "Edit Script" view
@@ -489,7 +497,7 @@ let editGet viewContext =
         Response.withStatusCode 404 >> Response.ofEmpty
       )
 
-    let! view = scriptManager existing
+    let! view = scriptManager (UserEditor existing)
     let! template = viewContext.contextualTemplate
 
     let html = template "Edit Script" view
@@ -511,10 +519,10 @@ let demoGet viewContext =
         {| title = "Alone in the dark"
            ink = demoText |}
 
-    let! view = editor demo
+    let! view = scriptManager demo
     let! template = viewContext.contextualTemplate
 
-    let html = template "Edit Script" [ view ]
+    let html = template "Edit Script" view
 
     return
       Response.withHxPushUrl $"/script/demo"
@@ -565,7 +573,7 @@ let editPost viewContext =
 
     let! template = viewContext.contextualTemplate
 
-    let! view = scriptManager script
+    let! view = scriptManager (UserEditor script)
     let html = template "Edit Script" view
 
     return! HxFragment "body" html
@@ -724,7 +732,7 @@ let publishPost viewContext =
 
     let! template = viewContext.contextualTemplate
 
-    let! view = scriptManager updated
+    let! view = scriptManager (UserEditor updated)
     let html = template "Edit Script" view
 
     return! HxFragment "body" html
@@ -754,7 +762,7 @@ let unpublishPost viewContext =
 
     let! template = viewContext.contextualTemplate
 
-    let! view = scriptManager updated
+    let! view = scriptManager (UserEditor updated)
     let html = template "Edit Script" view
 
     return! HxFragment "body" html
@@ -853,6 +861,37 @@ let lintPost =
   }
   |> Handler.flatten
   |> post "/script/lint"
+
+let makePlaygroundScript ink =
+  handler {
+    let title = "Playground"
+    let fakeUserId = System.Guid()
+
+    let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
+
+    let id = System.Guid()
+    let story = compile fileHandler title ink
+
+    match story with
+    | CompiledStory(story, stats) ->
+      let inkJson = story.ToJson()
+
+      let script =
+        { id = id
+          ink = ink
+          inkJson = inkJson
+          stats = stats
+          title = title
+          publishedUrl = None
+          writerId = fakeUserId.ToString() }
+
+      return script
+    // Save the actual script even if there are errors
+    // that will prevent it running
+    | CompilationErrors _ ->
+      return
+        failwithf "The playground Ink didn't compile"
+  }
 
 let getExampleScript filename =
   handler {

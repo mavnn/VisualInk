@@ -58,31 +58,50 @@ module private Queries =
 
   let assetsByCategory (category: AssetCategory) =
     handler {
-      let! user = User.ensureSessionUser ()
+      let! maybeUser = User.getSessionUser ()
 
       return!
-        DocStore.query<AssetMetadata> (fun q ->
-          q.Where(fun a ->
-            a.MatchesSql(
-              "data ->> 'category' = ?",
-              sprintf "%A" category
-            )
-            && a.TenantIsOneOf(
-              user.id.ToString(),
-              StorageConstants.DefaultTenantId
-            )))
+        match maybeUser with
+        | Some user ->
+          DocStore.query<AssetMetadata> (fun q ->
+            q.Where(fun a ->
+              a.MatchesSql(
+                "data ->> 'category' = ?",
+                sprintf "%A" category
+              )
+              && a.TenantIsOneOf(
+                user.id.ToString(),
+                StorageConstants.DefaultTenantId
+              )))
+        | None ->
+          DocStore.queryShared<AssetMetadata, _> (fun q ->
+            q.Where(fun a ->
+              a.MatchesSql(
+                "data ->> 'category' = ?",
+                sprintf "%A" category
+              )))
     }
 
   let assetByNameAs
-    (tenantId: System.Guid)
+    (tenantId: System.Guid option)
     (name: string)
     (category: AssetCategory)
     =
     handler {
-      let! logger = Handler.plug<ILogger<AssetMetadata>, _>()
-      let tenantStr = tenantId.ToString()
+      let! logger =
+        Handler.plug<ILogger<AssetMetadata>, _> ()
 
-      logger.LogDebug("Querying owner tenant for {category} named {name}", category, name)
+      let tenantStr =
+        match tenantId with
+        | Some tid -> tid.ToString()
+        | None -> JasperFx.MultiTenancy.TenantId.DefaultTenantId
+
+      logger.LogDebug(
+        "Querying owner tenant for {category} named {name}",
+        category,
+        name
+      )
+
       let! asset =
         DocStore.singleShared<AssetMetadata, _> (fun q ->
           q
@@ -98,7 +117,12 @@ module private Queries =
         match asset with
         | Some _ -> Handler.return' asset
         | None ->
-          logger.LogDebug("Querying default tenant for {category} named {name}", category, name)
+          logger.LogDebug(
+            "Querying default tenant for {category} named {name}",
+            category,
+            name
+          )
+
           DocStore.singleShared<AssetMetadata, _> (fun q ->
             q
               .Where(fun a -> a.name = name)
@@ -110,9 +134,10 @@ module private Queries =
     }
 
   let assetByName name category =
-    User.ensureSessionUser ()
+    User.getSessionUser ()
+    |> Handler.mapOption (fun user -> user.id)
     |> Handler.bind (fun user ->
-      assetByNameAs user.id name category)
+      assetByNameAs user name category)
 
   // Call this when a url is removed from the assets metadata
   // store so we can check if the file pointed at can be deleted.
