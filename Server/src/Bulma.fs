@@ -89,9 +89,9 @@ let button attr content =
   _button (Attr.merge [ _class_ "button" ] attr) content
 
 let buttons attr buttons =
-    buttons
-    |> List.map (fun (attr, content) -> button attr content)
-    |> _div (Attr.merge [_class_ "buttons"] attr) 
+  buttons
+  |> List.map (fun (attr, content) -> button attr content)
+  |> _div (Attr.merge [ _class_ "buttons" ] attr)
 
 let image figure img =
   _figure
@@ -191,6 +191,9 @@ let icon name attr =
     (Attr.merge [ _class_ "icon" ] attr)
     [ _i [ _class_ $"mdi mdi-{name}" ] [] ]
 
+let iconText attr content =
+  _span (Attr.merge [ _class_ "icon-text" ] attr) content
+
 type CardInput =
   { image: XmlNode list
     content: XmlNode list }
@@ -266,3 +269,39 @@ let menu attr items =
        [ _p [ _class_ "menu-label" ] [ _text input.label ]
          if input.items.Length <> 0 then
            yield! [ _ul [ _class_ "menu-list" ] itemNodes ] ]))
+
+type DetailMessageInput =
+  { content: XmlNode list
+    summary: XmlNode list
+    summaryAttr: XmlAttribute list
+    messageAttr: XmlAttribute list }
+
+let detailMessage setOpts =
+  let opts =
+    setOpts
+      { content = []
+        summary = []
+        summaryAttr = []
+        messageAttr = [] }
+
+  // _details
+  //   (Attr.merge [ _class_ "message" ] opts.messageAttr)
+  //   [ _summary
+  //       (Attr.merge
+  //         [ _class_ "message-header" ]
+  //         opts.summaryAttr)
+  //       [ iconText
+  //           []
+  //           (icon "arrow-down-bold" [] :: opts.summary) ]
+  //     _div [ _class_ "message-body" ] opts.content ]
+  _details
+    (Attr.merge [ _class_ "block" ] opts.messageAttr)
+    [ _summary
+        (Attr.merge
+          [  ]
+          opts.summaryAttr)
+        [ iconText
+            []
+            // (icon "arrow-down-bold" [] :: opts.summary) ]
+             opts.summary ]
+      _div [  ] opts.content ]

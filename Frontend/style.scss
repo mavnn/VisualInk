@@ -50,11 +50,13 @@ html {
 @media all and (min-width:1216px) { html { font-size: 22px; } }
 @media all and (max-width:768px) { html{ font-size: 18px; } }
 
+#example-viewer {
+    height: 15rem;
+}
 #codemirror { border-color: var(--bulma-input-border-color); border-radius: var(--bulma-input-radius); border-style: solid; border-width: var(--bulma-control-border-width); overflow: clip; }
 #codemirror:focus-within {  border-color: hsl(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l)); box-shadow: var(--bulma-input-focus-shadow-size) hsla(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l),var(--bulma-input-focus-shadow-alpha)); }
 .cm-editor {
     height: 100%;
-    min-height: 15rem;
 }
 .cm-editor.cm-focused { outline: 0px; }
 .cm-editor > .cm-scroller {

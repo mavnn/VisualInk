@@ -254,14 +254,15 @@ let editor input =
       | DemoEditor _ ->
         B.button
           [ _id_ "run-button"
-            Attr.create "hx-on:htmx:config-request" "let ink = fe.getEditor().state.doc.toString(); event.detail.parameters.ink = ink; localStorage.setItem('ink', ink); localStorage.setItem('title', document.getElementById('story-title').value);"
+            Attr.create
+              "hx-on:htmx:config-request"
+              "let ink = fe.getEditor().state.doc.toString(); event.detail.parameters.ink = ink; localStorage.setItem('ink', ink); localStorage.setItem('title', document.getElementById('story-title').value);"
             Hx.post "/playground/playthrough"
             Hx.select "#page"
             Hx.targetCss "#page"
             _disabled_
             _name_ "Script"
-            _class_ B.Mods.isPrimary
-            ]
+            _class_ B.Mods.isPrimary ]
           [ _text "Test your script" ]
 
     B.form
@@ -288,10 +289,10 @@ let editor input =
                       _placeholder_ "Your script title" ] ] })
         match input with
         | DemoEditor _ ->
-          B.notification
-            [ _class_ B.Mods.isInfo ]
+          _p
+            [ _class_ "has-text-danger mb-2" ]
             [ _text
-                "Hi! This page exists to let people play with Visual Ink's script editor without having to create an account, but just so you know, until you sign up you won't be able to save anything or add your own speakers, scenes, or music." ]
+                "To save changes and add images, you'll need to create an account." ]
         | UserEditor { publishedUrl = Some url } ->
           B.notification
             [ _class_ B.Mods.isPrimary ]
@@ -332,100 +333,85 @@ let scriptManager (editorInput: EditorInput) =
       |> System.Text.Json.JsonSerializer.Serialize
       |> System.Net.WebUtility.HtmlEncode
 
+    let makeMenu
+      title
+      subItemName
+      (items:
+        {| name: string
+           subItems: string list |} list)
+      =
+      items
+      |> List.map (fun item ->
+        match item.subItems with
+        | [] ->
+          [ _a
+              [ _onclick_ $"fe.addText({encode item.name})" ]
+              [ _text item.name ] ]
+        | subItems ->
+          [ _a
+              [ _onclick_ $"fe.addText({encode item.name})" ]
+              [ _text item.name ]
+            _details
+              []
+              [ _summary [] [ _text subItemName ]
+                _ul
+                  []
+                  (subItems
+                   |> List.map (fun i ->
+                     _li
+                       []
+                       [ _a
+                           [ _onclick_
+                               $"fe.addText({encode i})" ]
+                           [ _text i ] ])) ] ])
+      |> fun list ->
+          [ B.title [ _class_ "is-6" ] title
+            B.content
+              []
+              (List.intersperse
+                [ _hr [ _class_ "mt-1 mb-1" ] ]
+                list
+               |> List.concat) ]
+
+
     let speakerMenu =
       speakers
       |> List.map (fun speaker ->
-        match speaker.emotes with
-        | [] ->
-          { B.MenuLinkItem.attr =
-              [ _class_ "is-active"
-                _onclick_
-                  $"fe.addText({encode speaker.name})" ]
-            B.MenuLinkItem.text = speaker.name }
-          |> B.MenuLink
-        | emotes ->
-          { B.MenuSublistItem.sublabel =
-              { B.MenuLinkItem.attr =
-                  [ _class_ "is-active"
-                    _onclick_
-                      $"fe.addText({encode speaker.name})" ]
-                B.MenuLinkItem.text = speaker.name }
-            B.MenuSublistItem.items =
-              emotes
-              |> List.map (fun e ->
-                { B.MenuLinkItem.attr =
-                    [ _onclick_
-                        $"fe.addText({encode e.emote})" ]
-                  B.MenuLinkItem.text = e.emote }) }
-          |> B.MenuSublist)
-      |> fun list ->
-          { B.MenuInput.label = "Speakers"
-            B.MenuInput.items = list }
+        {| name = speaker.name
+           subItems =
+            speaker.emotes |> List.map (fun e -> e.emote) |})
+      |> makeMenu "Speakers" "Emotes"
 
     let! scenes = StoryAssets.findScenes ()
 
     let sceneMenu =
       scenes
-      |> List.map (fun scene ->
-        match scene.tags with
-        | [] ->
-          { B.MenuLinkItem.attr =
-              [ _class_ "is-active"
-                _onclick_
-                  $"fe.addText({encode scene.name})" ]
-            B.MenuLinkItem.text = scene.name }
-          |> B.MenuLink
-        | tags ->
-          { B.MenuSublistItem.sublabel =
-              { B.MenuLinkItem.attr =
-                  [ _class_ "is-active"
-                    _onclick_
-                      $"fe.addText({encode scene.name})" ]
-                B.MenuLinkItem.text = scene.name }
-            B.MenuSublistItem.items =
-              tags
-              |> List.map (fun e ->
-                { B.MenuLinkItem.attr =
-                    [ _onclick_
-                        $"fe.addText({encode e.tag})" ]
-                  B.MenuLinkItem.text = e.tag }) }
-          |> B.MenuSublist)
-      |> fun list ->
-          { B.MenuInput.label = "Scenes"
-            B.MenuInput.items = list }
+      |> List.map (fun scene -> {| name = scene.name; subItems = scene.tags |> List.map (fun s -> s.tag)|})
+      |> makeMenu "Scenes" "Tags"
 
     let! music = StoryAssets.findAllMusic ()
 
     let musicMenu =
       music
-      |> List.collect (fun piece ->
-        [ { B.MenuLinkItem.attr =
-              [ _class_ "is-active"
-                _onclick_
-                  $"fe.addText({encode piece.name})" ]
-            B.MenuLinkItem.text = piece.name }
-          |> B.MenuLink ])
-      |> fun list ->
-          { B.MenuInput.label = "Music"
-            B.MenuInput.items = list }
+      |> List.map (fun music -> {| name = music.name; subItems = []|})
+      |> makeMenu "Music" ""
 
-    let sideBar =
-      B.menu [] [ speakerMenu; sceneMenu; musicMenu ]
+    let sideBar = _div [] (List.concat [speakerMenu; sceneMenu ; musicMenu ])
 
     return
       _div
         [ _id_ "editor" ]
         [ B.columns
-            [ _style_ "max-height: 70dvh;" ]
+            []
             [ B.encloseAttr
                 B.column
                 [ _class_ "is-three-quarters"
-                  _style_ "max-height: 70dvh;" ]
+                  _style_ "height: 100vh;" ]
                 form
               B.encloseAttr
                 B.column
                 [ _style_
-                    "overflow-y: auto; min-height: 50dvh;" ]
+                    "overflow-y: auto; max-height: 100vh;" ]
                 sideBar ] ]
       |> List.singleton
   }
@@ -513,6 +499,8 @@ let demoGet viewContext =
   handler {
     let! demoText =
       Content.getContentText "examples/AloneInTheDark.ink"
+      |> Handler.map (fun ink ->
+        ink.Split '\n' |> Seq.skip 1 |> String.concat "\n")
 
     let demo =
       DemoEditor
@@ -889,8 +877,7 @@ let makePlaygroundScript ink =
     // Save the actual script even if there are errors
     // that will prevent it running
     | CompilationErrors _ ->
-      return
-        failwithf "The playground Ink didn't compile"
+      return failwithf "The playground Ink didn't compile"
   }
 
 let getExampleScript filename =
