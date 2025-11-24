@@ -154,6 +154,7 @@ let skeletalTemplate title content =
 let makeNavbar: Handler<XmlNode, HttpHandler> =
   handler {
     let! userView = User.navbarAccountView ()
+    let! scriptNav = Script.nav
 
     return
       B.navbar
@@ -165,7 +166,7 @@ let makeNavbar: Handler<XmlNode, HttpHandler> =
           menu =
             [ B.navbarStart
                 []
-                [ Script.nav
+                [ scriptNav
                   StoryAssets.speakerNav
                   StoryAssets.sceneNav
                   StoryAssets.musicNav ]

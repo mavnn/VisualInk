@@ -386,17 +386,24 @@ let scriptManager (editorInput: EditorInput) =
 
     let sceneMenu =
       scenes
-      |> List.map (fun scene -> {| name = scene.name; subItems = scene.tags |> List.map (fun s -> s.tag)|})
+      |> List.map (fun scene ->
+        {| name = scene.name
+           subItems =
+            scene.tags |> List.map (fun s -> s.tag) |})
       |> makeMenu "Scenes" "Tags"
 
     let! music = StoryAssets.findAllMusic ()
 
     let musicMenu =
       music
-      |> List.map (fun music -> {| name = music.name; subItems = []|})
+      |> List.map (fun music ->
+        {| name = music.name; subItems = [] |})
       |> makeMenu "Music" ""
 
-    let sideBar = _div [] (List.concat [speakerMenu; sceneMenu ; musicMenu ])
+    let sideBar =
+      _div
+        []
+        (List.concat [ speakerMenu; sceneMenu; musicMenu ])
 
     return
       _div
@@ -926,9 +933,18 @@ let getExampleScript filename =
   }
 
 let nav =
-  _a
-    [ _class_ "navbar-item"; _href_ "/script" ]
-    [ _text "Scripts" ]
+  handler {
+
+    match! User.getSessionUser () with
+    | Some _ ->
+      _a
+        [ _class_ "navbar-item"; _href_ "/script" ]
+        [ _text "Scripts" ]
+    | None ->
+      _a
+        [ _class_ "navbar-item"; _href_ "/script/demo" ]
+        [ _text "Demo Editor" ]
+  }
 
 module Service =
   open Microsoft.Extensions.DependencyInjection

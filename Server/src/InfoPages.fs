@@ -7,8 +7,6 @@ open Falco.Routing
 open Falco.Markup
 open Falco.Htmx
 open Markdig
-open Microsoft.AspNetCore.Hosting
-open System.IO
 
 module B = Bulma
 

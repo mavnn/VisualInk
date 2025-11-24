@@ -479,7 +479,7 @@ let makeBackgroundUnderlay step =
         _style_ (
           "z-index: -1; height: 100dvh; width: 100vw; background-image: url('"
           + bg
-          + "'); background-size: cover; position: fixed;"
+          + "'); background-size: cover; background-position: center; position: fixed;"
         )
       | None ->
         _style_
