@@ -29,6 +29,7 @@ type Step =
   { gameTitle: string
     scriptId: System.Guid
     speaker: string option
+    imageOverride: string option
     show: bool
     emote: string option
     music: string option
@@ -91,6 +92,11 @@ let getStep previousStep (story: Ink.Runtime.Story) =
 
     let show = story.currentTags.Contains "vo" |> not
 
+    let image =
+      story.currentTags
+      |> Seq.tryFind (fun t -> t.StartsWith "show ")
+      |> Option.map (fun t -> t.Split(' ', 2).[1])
+
     let animation =
       story.currentTags
       |> Seq.tryFind (fun t -> t.StartsWith "animation ")
@@ -100,6 +106,7 @@ let getStep previousStep (story: Ink.Runtime.Story) =
       { previousStep with
           text = story.currentText
           speaker = speaker
+          imageOverride = image
           choices = choices
           scene = scene
           show = show
@@ -206,6 +213,7 @@ let private start script runAs =
         scene = None
         music = None
         speaker = None
+        imageOverride = None
         emote = None
         show = false
         choices = [||]
@@ -331,7 +339,12 @@ let private stepToSpeakerImage animation step =
   let speakerStyle =
     "position: fixed; height: 60%; min-width: 5000px; object-fit: contain; bottom: 0dvh; align-self: center;"
 
-  match step.show, step.speaker, step.emote with
+  let nameToShow =
+      match step.imageOverride with
+      | None -> step.speaker
+      | Some o -> Some o
+
+  match step.show, nameToShow, step.emote with
   | false, _, _
   | _, None, _ ->
     _img
