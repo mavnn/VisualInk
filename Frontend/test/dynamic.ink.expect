@@ -1,8 +1,0 @@
-Script(
-  ContentLine(InlineSequence(SequenceContent, Pipe, SequenceContent)),
-  ContentLine(InlineSequence(SequenceContent, Pipe, SequenceContent, Pipe, SequenceContent, Pipe, SequenceContent),Divert(DivertArrow,DivertTarget(Path))),
-  ContentLine(InlineSequence(SequenceTypeMarker, SequenceContent(Divert(DivertArrow,DivertTarget(Path))),Pipe,SequenceContent(Divert(DivertArrow,DivertTarget(Path))))),
-  ContentLine(InlineSequence(SequenceContent, Pipe, SequenceContent( InlineSequence(SequenceTypeMarker, SequenceContent, Pipe, SequenceContent)))),
-  ContentLine(InlineSequence(SequenceTypeMarker, SequenceContent,Pipe, SequenceContent,Pipe, SequenceContent,Pipe, SequenceContent,Pipe, SequenceContent(Divert(DivertArrow,DivertTarget(Path))))),
-  ContentLine(Conditional(ExpressionVariableReference(Name)))
-)

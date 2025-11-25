@@ -1,1 +1,0 @@
-Script(ContentLine(Divert(DivertArrow)),ContentLine(Divert(DivertArrow,DivertTarget(Path))),ContentLine(Divert(DivertArrow,DivertTarget(Path))),ContentLine(Divert(DivertArrow)))

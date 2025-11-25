@@ -4,7 +4,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from "@codemirror/state"
 import { linter, lintGutter } from '@codemirror/lint'
 import { CompletionContext, autocompletion, snippetCompletion } from "@codemirror/autocomplete"
-import { InkLanguageSupport } from './lezer_ink'
+import { InkLanguageSupport } from '@mavnn/codemirror-lang-ink'
 
 // @ts-ignore("Because we can!")
 window.htmx = htmx;

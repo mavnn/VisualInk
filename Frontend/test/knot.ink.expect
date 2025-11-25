@@ -1,7 +1,0 @@
-Script(
-  Knot(Name),
-  Knot(Name),
-  Knot(Name, KnotArguments(ref, Name, Name)),
-  Stitch(Name),
-  Function(function,Name,KnotArguments(Name))
-)

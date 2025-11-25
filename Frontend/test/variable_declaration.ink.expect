@@ -1,6 +1,0 @@
-Script(
-  VariableDeclaration(Name, Int),
-  ConstDeclaration(Name, ExpressionList(ListMember, ListMember)),
-  ContentLine(Divert(DivertArrow, DivertTarget(END))),
-  ListDeclaration(Name, ListDefinition(Name, SelectedName, Name))
-)
