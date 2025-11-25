@@ -694,10 +694,10 @@ let createPublishedUrl script =
     return!
       Handler.fromCtx (fun ctx ->
         let scheme =
-          if ctx.Request.IsHttps then
-            "https://"
-          else
+          if ctx.Request.Host.Value.Contains "localhost" then
             "http://"
+          else
+            "https://"
 
         $"{scheme}{ctx.Request.Host.Value}/published/{slug}")
   }
