@@ -25,7 +25,7 @@
   "dependencies": {
     "@codemirror/autocomplete": "^6.19.0",
     "@codemirror/lint": "^6.9.0",
-    "@mavnn/codemirror-lang-ink": "0.9.5",
+      "@mavnn/codemirror-lang-ink": "0.9.8",
     "codemirror": "^6.0.2",
     "htmx.org": "^2.0.7",
     "idiomorph": "^0.7.4"

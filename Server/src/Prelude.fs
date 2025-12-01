@@ -309,15 +309,29 @@ module Content =
 
       return!
         File.ReadAllTextAsync(
-          Path.Join(hostEnv.ContentRootPath, "content", path)
+          Path.Join(
+            hostEnv.ContentRootPath,
+            "content",
+            path
+          )
         )
         |> Handler.returnTask
     }
 
 module List =
-    /// The intersperse function takes an element and a list and
-    /// 'intersperses' that element between the elements of the list.
-    let intersperse sep ls =
-        List.foldBack (fun x -> function
-            | [] -> [x]
-            | xs -> x::sep::xs) ls []
+  /// The intersperse function takes an element and a list and
+  /// 'intersperses' that element between the elements of the list.
+  let intersperse sep ls =
+    List.foldBack
+      (fun x ->
+        function
+        | [] -> [ x ]
+        | xs -> x :: sep :: xs)
+      ls
+      []
+
+module Option =
+  let ofTry<'v> (tried: bool * 'v) =
+    match tried with
+    | true, v -> Some v
+    | false, _ -> None

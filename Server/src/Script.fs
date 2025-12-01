@@ -28,11 +28,14 @@ type Script =
     [<JsonIgnore>]
     mutable writerId: string }
 
+type CompileCompleted =
+  { compiled: Ink.Runtime.Story
+    parsed: Ink.Parsed.Story
+    stats: ScriptStats }
+
 type CompilationResult =
-  | CompiledStory of Ink.Runtime.Story * ScriptStats option
-  | CompilationErrors of
-    (string * Ink.ErrorType) seq *
-    ScriptStats option
+  { completed: CompileCompleted option
+    errors: (string * Ink.ErrorType) seq }
 
 type ScriptFileHandler
   (docStore: IDocumentStore, userService: User.IUserService)
@@ -60,6 +63,26 @@ type ScriptFileHandler
       | None ->
         failwithf "Script '%s' not found" fullFilename
 
+type ErrorList =
+  System.Collections.Generic.List<string * Ink.ErrorType>
+
+let private makeCompiler
+  ink
+  title
+  (errors: ErrorList)
+  fileHandler
+  =
+  let errorHandler: Ink.ErrorHandler =
+    Ink.ErrorHandler(fun err t -> errors.Add(err, t))
+
+  new Ink.Compiler(
+    ink,
+    new Ink.Compiler.Options(
+      sourceFilename = title,
+      errorHandler = errorHandler,
+      fileHandler = fileHandler
+    )
+  )
 
 let private compile fileHandler title ink =
   let errors =
@@ -67,32 +90,24 @@ let private compile fileHandler title ink =
       string * Ink.ErrorType
      >()
 
-  let errorHandler: Ink.ErrorHandler =
-    Ink.ErrorHandler(fun err t -> errors.Add(err, t))
-
-  let compiler =
-    new Ink.Compiler(
-      ink,
-      new Ink.Compiler.Options(
-        sourceFilename = title,
-        errorHandler = errorHandler,
-        fileHandler = fileHandler
-      )
-    )
+  let compiler = makeCompiler ink title errors fileHandler
 
   let parsed = compiler.Parse()
   let story = compiler.Compile()
 
-  let stats =
-    Option.ofObj parsed
-    |> Option.map Ink.Stats.Generate
-    |> Option.map (fun s ->
-      { words = s.words; choices = s.choices })
+  match Option.ofObj parsed, Option.ofObj story with
+  | Some parsed, Some compiled ->
+    let stats =
+      Ink.Stats.Generate parsed
+      |> fun s -> { words = s.words; choices = s.choices }
 
-  if errors.Count > 0 then
-    CompilationErrors(errors, stats)
-  else
-    CompiledStory(story, stats)
+    { completed =
+        Some
+          { compiled = compiled
+            parsed = parsed
+            stats = stats }
+      errors = errors }
+  | _ -> { completed = None; errors = errors }
 
 type ScriptTemplate = { title: string; ink: string }
 
@@ -150,15 +165,15 @@ let create (input: ScriptTemplate) =
     let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
     let story = compile fileHandler input.title input.ink
 
-    match story with
-    | CompiledStory(story, stats) ->
+    match story.completed with
+    | Some { compiled = story; stats = stats } ->
       let inkJson = story.ToJson()
 
       let script =
         { id = id
           ink = input.ink
           inkJson = inkJson
-          stats = stats
+          stats = Some stats
           title = input.title
           publishedUrl = None
           writerId = user.id.ToString() }
@@ -168,12 +183,12 @@ let create (input: ScriptTemplate) =
       return script
     // Save the actual script even if there are errors
     // that will prevent it running
-    | CompilationErrors(_, stats) ->
+    | None ->
       let script =
         { id = id
           ink = input.ink
           inkJson = "{}"
-          stats = stats
+          stats = None
           title = input.title
           publishedUrl = None
           writerId = user.id.ToString() }
@@ -547,9 +562,10 @@ let editPost viewContext =
     let story = compile fileHandler input.title input.ink
 
     let inkJson, stats =
-      match story with
-      | CompiledStory(story, stats) -> story.ToJson(), stats
-      | CompilationErrors(_, stats) -> "{}", stats
+      match story.completed with
+      | Some { compiled = story; stats = stats } ->
+        story.ToJson(), Some stats
+      | None -> "{}", None
 
     let! existingScript =
       load id
@@ -694,7 +710,9 @@ let createPublishedUrl script =
     return!
       Handler.fromCtx (fun ctx ->
         let scheme =
-          if ctx.Request.Host.Value.Contains "localhost" then
+          if
+            ctx.Request.Host.Value.Contains "localhost"
+          then
             "http://"
           else
             "https://"
@@ -802,6 +820,26 @@ let private inkToResponse
       message = error
       severity = severity }
 
+type AutocompleteContent =
+  { lists: string list
+    globalVariables: string list }
+
+let private getAutocompleteContext
+  (story: Ink.Parsed.Story)
+  =
+  story.FindAll<Ink.Parsed.VariableAssignment>()
+  |> Seq.map (fun v -> v.variableName)
+  |> Set.ofSeq
+  |> printfn "%A"
+
+  story.ResolveWeavePointNaming()
+  story.FindAll<Ink.Parsed.Identifier>()
+  |> Seq.map (fun v -> v.ToString())
+  |> Set.ofSeq
+  |> printfn "%A"
+
+  { lists = []; globalVariables = [] }
+
 let lintPost =
   handler {
     let! json =
@@ -816,16 +854,20 @@ let lintPost =
     let compileResult =
       compile fileHandler json.title json.ink
 
-    let inkJson, stats, response =
-      match compileResult with
-      | CompiledStory(story, stats) ->
-        story.ToJson(), stats, []
-      | CompilationErrors(errors, stats) ->
-        "{}",
-        stats,
-        errors
-        |> Seq.map (inkToResponse json.title)
-        |> Seq.toList
+    let response =
+      compileResult.errors
+      |> Seq.map (inkToResponse json.title)
+
+    let story, stats =
+      match compileResult.completed with
+      | Some result ->
+        result.compiled.ToJson(), Some result.stats
+      | None -> "{}", None
+
+    let autocompleteContext =
+      compileResult.completed
+      |> Option.map (fun { parsed = parsed } ->
+        getAutocompleteContext parsed)
 
     if referrer.Length > 36 then
       match
@@ -843,7 +885,7 @@ let lintPost =
         let script =
           { existingScript with
               ink = json.ink
-              inkJson = inkJson
+              inkJson = story
               stats = stats
               title = json.title }
 
@@ -865,25 +907,23 @@ let makePlaygroundScript ink =
     let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
 
     let id = System.Guid()
-    let story = compile fileHandler title ink
+    let compileResult = compile fileHandler title ink
 
-    match story with
-    | CompiledStory(story, stats) ->
+    match compileResult.completed with
+    | Some { compiled = story; stats = stats } ->
       let inkJson = story.ToJson()
 
       let script =
         { id = id
           ink = ink
           inkJson = inkJson
-          stats = stats
+          stats = Some stats
           title = title
           publishedUrl = None
           writerId = fakeUserId.ToString() }
 
       return script
-    // Save the actual script even if there are errors
-    // that will prevent it running
-    | CompilationErrors _ ->
+    | None ->
       return failwithf "The playground Ink didn't compile"
   }
 
@@ -907,25 +947,23 @@ let getExampleScript filename =
     let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
 
     let id = System.Guid()
-    let story = compile fileHandler title ink
+    let compileResult = compile fileHandler title ink
 
-    match story with
-    | CompiledStory(story, stats) ->
+    match compileResult.completed with
+    | Some { compiled = story; stats = stats } ->
       let inkJson = story.ToJson()
 
       let script =
         { id = id
           ink = ink
           inkJson = inkJson
-          stats = stats
+          stats = Some stats
           title = title
           publishedUrl = None
           writerId = fakeUserId.ToString() }
 
       return script
-    // Save the actual script even if there are errors
-    // that will prevent it running
-    | CompilationErrors _ ->
+    | None ->
       return
         failwithf
           "Example file %s did not compile!"
