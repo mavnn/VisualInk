@@ -609,6 +609,7 @@ let private listView scripts =
               [ _th [] [ _text "Title" ]
                 _th [] [ _text "Words" ]
                 _th [] [ _text "Choices" ]
+                _th [] [ _text "Published" ]
                 _th [] [ _text "Delete?" ] ] ]
         _tbody
           []
@@ -638,6 +639,16 @@ let private listView scripts =
                          $"{stats.choices}")
                        |> Option.defaultValue "??"
                      ) ]
+                 _td
+                   []
+                   [ B.iconText
+                       []
+                       [ if
+                           Option.isSome s.publishedUrl
+                         then
+                           B.icon
+                             "check-outline"
+                             [ _class_ "has-text-primary" ] ] ]
                  _td
                    []
                    [ B.delete
@@ -833,6 +844,7 @@ let private getAutocompleteContext
   |> printfn "%A"
 
   story.ResolveWeavePointNaming()
+
   story.FindAll<Ink.Parsed.Identifier>()
   |> Seq.map (fun v -> v.ToString())
   |> Set.ofSeq
