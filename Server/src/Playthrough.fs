@@ -33,6 +33,7 @@ type Step =
     show: bool
     emote: string option
     music: string option
+    sfx: string option
     scene: string option
     text: string
     choices: Choice array
@@ -53,54 +54,51 @@ type PlaythroughDocument =
     script: Script
     steps: Steps }
 
+
 let getStep previousStep (story: Ink.Runtime.Story) =
   handler {
-    let speakerVariable =
-      story.variablesState.["speaker"] :?> string
+    let getVar name bind =
+      story.variablesState.[name] :?> string
+      |> Option.ofObj
+      |> Option.bind bind
+
+    let getTag name =
+      story.currentTags
+      |> Seq.tryFind (fun t -> t.StartsWith $"{name} ")
+      |> Option.map (fun t -> t.Split(' ', 2).[1])
 
     let speaker =
-      Option.ofObj speakerVariable
-      |> Option.bind (fun v ->
+      getVar "speaker" (fun v ->
         if v = "Narrator" || v = "" then None else Some v)
 
-    let sceneVariable =
-      story.variablesState.["scene"] :?> string
-
     let scene =
-      Option.ofObj sceneVariable
-      |> Option.bind (fun v ->
+      getVar "scene" (fun v ->
         if v = "" then None else Some v)
-
-    let musicVariable =
-      story.variablesState.["music"] :?> string
 
     let music =
-      Option.ofObj musicVariable
-      |> Option.bind (fun v ->
+      getVar "music" (fun v ->
         if v = "" then None else Some v)
+
+    let emote = getTag "emote"
+
+    let image = getTag "show"
+
+    // Move to vfx for a more general term
+    let aniTag = getTag "animation"
+    let vfxTag = getTag "vfx"
+
+    // Prefer the new tag if a value is provided
+    let animation = if Option.isNone vfxTag then aniTag else vfxTag
+
+    let sfx = getTag "sfx"
+
+    let show = story.currentTags.Contains "vo" |> not
 
     let choices =
       story.currentChoices
       |> Seq.map (fun c ->
         { index = c.index; text = c.text })
       |> Seq.toArray
-
-    let emote =
-      story.currentTags
-      |> Seq.tryFind (fun t -> t.StartsWith "emote ")
-      |> Option.map (fun t -> t.Split(' ', 2).[1])
-
-    let show = story.currentTags.Contains "vo" |> not
-
-    let image =
-      story.currentTags
-      |> Seq.tryFind (fun t -> t.StartsWith "show ")
-      |> Option.map (fun t -> t.Split(' ', 2).[1])
-
-    let animation =
-      story.currentTags
-      |> Seq.tryFind (fun t -> t.StartsWith "animation ")
-      |> Option.map (fun t -> t.Split(' ', 2).[1])
 
     return
       { previousStep with
@@ -111,6 +109,7 @@ let getStep previousStep (story: Ink.Runtime.Story) =
           scene = scene
           show = show
           music = music
+          sfx = sfx
           emote = emote
           animation = animation
           finished =
@@ -193,7 +192,10 @@ let rec cont (guid: System.Guid) choice =
     do! DocStore.saveChanges session
     // Skip forwards if the returned step has no content at all
     // and there is no decision to make
-    if currentStep.choices.Length = 0 && System.String.IsNullOrWhiteSpace currentStep.text then
+    if
+      currentStep.choices.Length = 0
+      && System.String.IsNullOrWhiteSpace currentStep.text
+    then
       return! cont guid None
     else
       return steps
@@ -212,6 +214,7 @@ let private start script runAs =
         text = ""
         scene = None
         music = None
+        sfx = None
         speaker = None
         imageOverride = None
         emote = None
@@ -265,10 +268,12 @@ let private makeChoiceMenu guid step token =
       |> Seq.toList
     | true, _ ->
       let href =
-          match step.runAs with
-          | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
-          | RunAsPublisher _ -> "/"
-          | RunAsAnonymous -> "/script/demo"
+        match step.runAs with
+        | RunAsWriter ->
+          $"/script/{step.scriptId.ToString()}"
+        | RunAsPublisher _ -> "/"
+        | RunAsAnonymous -> "/script/demo"
+
       [ _a
           [ Hx.swapOuterHtml
             Hx.select "#page"
@@ -300,7 +305,8 @@ let private makeContentBox step =
 
 let private makeAudio steps =
   handler {
-    let! audio =
+    printfn "Current music: %A" steps.currentStep.music
+    let! music =
       match
         steps.currentStep.finished, steps.currentStep.music
       with
@@ -313,26 +319,45 @@ let private makeAudio steps =
           StoryAssets.findMusicAs None music
       | _ -> Handler.return' None
 
-    let audioSrc =
-      audio
+    let musicSrc =
+      music
+      |> Option.map (fun a -> a.url)
+      |> Option.defaultValue "/1-minute-of-silence.mp3"
+
+    let! sfx =
+      match steps.currentStep.sfx with
+      | Some sfx ->
+        match steps.currentStep.runAs with
+        | RunAsWriter -> StoryAssets.findMusic sfx
+        | RunAsPublisher guid ->
+          StoryAssets.findMusicAs (Some guid) sfx
+        | RunAsAnonymous -> StoryAssets.findMusicAs None sfx
+      | None -> Handler.return' None
+
+    let sfxSrc =
+      sfx
       |> Option.map (fun a -> a.url)
       |> Option.defaultValue "/1-minute-of-silence.mp3"
 
     return
-      [ _audio
-          [ _id_ "audio-background-music"
-            Attr.create
-              "hx-on::before-cleanup-element"
-              "fe.stopMusic(this)"
-            Attr.create
-              "hx-on::after-swap"
-              "fe.startMusic(this)"
-            Attr.create
-              "hx-on::after-process-node"
-              "fe.startMusic(this)"
-            _loop_
-            _src_ audioSrc ]
-          [] ]
+      [ yield
+          _audio
+            [ _id_ "audio-background-music"
+              Attr.create
+                "hx-on::before-cleanup-element"
+                "fe.stopMusic(this)"
+              _loop_
+              _src_ musicSrc ]
+            []
+        if Option.isSome sfx then
+          yield
+            _audio
+              [ _id_ "audio-sfx"
+                Attr.create
+                  "hx-on::before-cleanup-element"
+                  "fe.stopMusic(this)"
+                _src_ sfxSrc ]
+              [] ]
   }
 
 let private stepToSpeakerImage animation step =
@@ -340,9 +365,9 @@ let private stepToSpeakerImage animation step =
     "position: fixed; height: 60%; min-width: 5000px; object-fit: contain; bottom: 0dvh; align-self: center;"
 
   let nameToShow =
-      match step.imageOverride with
-      | None -> step.speaker
-      | Some o -> Some o
+    match step.imageOverride with
+    | None -> step.speaker
+    | Some o -> Some o
 
   match step.show, nameToShow, step.emote with
   | false, _, _
@@ -358,7 +383,7 @@ let private stepToSpeakerImage animation step =
         | RunAsPublisher guid ->
           StoryAssets.findSpeakerAs (Some guid) char
         | RunAsWriter -> StoryAssets.findSpeaker char
-        | RunAsAnonymous -> 
+        | RunAsAnonymous ->
           StoryAssets.findSpeakerAs None char
 
       let src =
@@ -468,7 +493,8 @@ let makeBackgroundUnderlay step =
         | [| name; tag |] ->
           (match step.runAs with
            | RunAsWriter -> StoryAssets.findScene name
-           | RunAsAnonymous -> StoryAssets.findSceneAs None name
+           | RunAsAnonymous ->
+             StoryAssets.findSceneAs None name
            | RunAsPublisher guid ->
              StoryAssets.findSceneAs (Some guid) name)
           |> Handler.map (
@@ -479,7 +505,8 @@ let makeBackgroundUnderlay step =
         | [| name |] ->
           (match step.runAs with
            | RunAsWriter -> StoryAssets.findScene name
-           | RunAsAnonymous -> StoryAssets.findSceneAs None name
+           | RunAsAnonymous ->
+             StoryAssets.findSceneAs None name
            | RunAsPublisher guid ->
              StoryAssets.findSceneAs (Some guid) name)
           |> Handler.map (Option.map (fun s -> s.url))
@@ -508,10 +535,11 @@ let makeBackgroundUnderlay step =
 
 let private closeButton step =
   let href =
-      match step.runAs with
-      | RunAsPublisher _ -> "/"
-      | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
-      | RunAsAnonymous -> "/script/demo"
+    match step.runAs with
+    | RunAsPublisher _ -> "/"
+    | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
+    | RunAsAnonymous -> "/script/demo"
+
   B.delete
     [ _class_ "m-2 is-medium"
       Hx.swapOuterHtml
@@ -639,7 +667,8 @@ let startPublishedGet viewContext =
 
     let! script =
       DocStore.singleShared<Script, _> (fun q ->
-        q .Where(fun s -> s.id = Slug.toGuid slug)
+        q
+          .Where(fun s -> s.id = Slug.toGuid slug)
           .Where(fun s -> s.AnyTenant()))
       |> Handler.ofOption (
         Response.withStatusCode 404 >> Response.ofEmpty
@@ -700,15 +729,14 @@ let startExampleGet viewContext =
 let startPlaygroundPost viewContext =
   handler {
     let! ink =
-     Handler.formDataOrFail (Response.withStatusCode 400 >> Response.ofEmpty)
-      (fun fd -> fd.TryGetStringNonEmpty "ink")
+      Handler.formDataOrFail
+        (Response.withStatusCode 400 >> Response.ofEmpty)
+        (fun fd -> fd.TryGetStringNonEmpty "ink")
+
     let! script = makePlaygroundScript ink
 
 
-    let! id =
-      start
-        script
-        RunAsAnonymous
+    let! id = start script RunAsAnonymous
 
     let! playthrough = load id
 

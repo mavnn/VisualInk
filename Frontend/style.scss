@@ -53,23 +53,25 @@ html {
 #example-viewer {
     height: 15rem;
 }
-#codemirror { border-color: var(--bulma-input-border-color); border-radius: var(--bulma-input-radius); border-style: solid; border-width: var(--bulma-control-border-width); overflow: clip; }
-#codemirror:focus-within {  border-color: hsl(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l)); box-shadow: var(--bulma-input-focus-shadow-size) hsla(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l),var(--bulma-input-focus-shadow-alpha)); }
-.cm-editor {
+#editor #codemirror { border-color: var(--bulma-input-border-color); border-radius: var(--bulma-input-radius); border-style: solid; border-width: var(--bulma-control-border-width); overflow: clip; }
+#editor #codemirror:focus-within {  border-color: hsl(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l)); box-shadow: var(--bulma-input-focus-shadow-size) hsla(var(--bulma-input-focus-h),var(--bulma-input-focus-s),var(--bulma-input-focus-l),var(--bulma-input-focus-shadow-alpha)); }
+#editor .cm-editor {
     height: 100%;
 }
-.cm-editor.cm-focused { outline: 0px; }
-.cm-editor > .cm-scroller {
+#editor .cm-editor.cm-focused { outline: 0px; }
+#editor .cm-editor > .cm-scroller {
     overflow: auto;
-    font-family: source_code_pro, sans-serif;
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
 }
-.cm-editor > .cm-gutters {
+#editor .cm-editor > .cm-gutters {
     border-radius: var(--bulma-input-radius);
+}
+.cm-scroller {
+    font-family: source_code_pro, sans-serif;
 }
 #navbar { border-bottom: 1px solid var(--bulma-primary); }
 @keyframes fade-in { 
@@ -88,4 +90,16 @@ html {
 .hide { opacity: 0; }
 .button {
     --bulma-button-outer-shadow-a: 0.05 !important;
+}
+ink-element .cm-editor {
+    border-radius: var(--bulma-radius);
+    overflow: clip; 
+}
+
+ink-element .cm-editor > .cm-gutters {
+    border-radius: var(--bulma-radius);
+}
+
+#frontpage-example .cm-editor {
+    height: 20rem;
 }

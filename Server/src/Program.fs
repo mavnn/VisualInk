@@ -246,17 +246,9 @@ let indexGet =
                     _alt_
                       "Picture of a visual novel play through in progress with a cartoon character saying 'Once upon a time'" ]
                 B.block
-                  []
-                  [ _div
-                      [ _style_ "display: none;"
-                        _id_ "example-text" ]
-                      [ _text exampleInk ]
-                    B.box
-                      [ _id_ "example-viewer"
-                        _style_ "max-height: 25rem;" ]
-                      [
-
-                      ] ] ] ] ]
+                  [_id_ "frontpage-example"]
+                  [ Elem.create "ink-element" [] [_pre [] [_code [] [_text exampleInk]]] ]
+                ] ] ]
       |> B.container []
       |> List.singleton
       |> template "Visual Ink"

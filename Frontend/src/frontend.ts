@@ -5,9 +5,11 @@ import { EditorState } from "@codemirror/state"
 import { linter, lintGutter } from '@codemirror/lint'
 import { CompletionContext, autocompletion, snippetCompletion } from "@codemirror/autocomplete"
 import { InkLanguageSupport } from '@mavnn/codemirror-lang-ink'
+import { InkElement } from './ink_element'
 
 // @ts-ignore("Because we can!")
 window.htmx = htmx;
+customElements.define("ink-element", InkElement)
 
 let editor: EditorView | null = null;
 
@@ -194,6 +196,10 @@ htmx.onLoad(function() {
         let audio = document.getElementById('audio-background-music') as HTMLAudioElement
         if (audio) {
                 startMusic(audio)
+        }
+        let sfx = document.getElementById('audio-sfx') as HTMLAudioElement
+        if (sfx) {
+                startMusic(sfx)
         }
         let exampleViewer = document.getElementById('example-viewer')
         if (exampleViewer) {
