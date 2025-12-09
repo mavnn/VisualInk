@@ -279,12 +279,13 @@ let serializeJson =
 
 module Slug =
   open Sqids
+  let private alphabet =
+          "hC5opuPZH3B2jML1t76wXmNDQYJUAkRGKT4vFfq9Sx8EbcngdiyeVrWzas"
 
   let sqids =
     SqidsEncoder<uint64>(
       SqidsOptions(
-        Alphabet =
-          "hC5opuPZH3B2jML1t76wXmNDQYJUAkRGKT4vFfq9Sx8EbcngdiyeVrWzas"
+        Alphabet = alphabet
       )
     )
 

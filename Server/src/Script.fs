@@ -37,15 +37,12 @@ type CompilationResult =
   { completed: CompileCompleted option
     errors: (string * Ink.ErrorType) seq }
 
-type ScriptFileHandler
-  (docStore: IDocumentStore, userService: User.IUserService)
+type ScriptFileHandler(docStore: IDocumentStore, userService: User.IUserService)
   =
   interface Ink.IFileHandler with
     member _.ResolveInkFilename includeName = includeName
 
-    member _.LoadInkFileContents
-      (fullFilename: string)
-      : string =
+    member _.LoadInkFileContents(fullFilename: string) : string =
       let userId = userService.GetUserId()
 
       match userId with
@@ -60,18 +57,11 @@ type ScriptFileHandler
             .First()
 
         script.ink
-      | None ->
-        failwithf "Script '%s' not found" fullFilename
+      | None -> failwithf "Script '%s' not found" fullFilename
 
-type ErrorList =
-  System.Collections.Generic.List<string * Ink.ErrorType>
+type ErrorList = System.Collections.Generic.List<string * Ink.ErrorType>
 
-let private makeCompiler
-  ink
-  title
-  (errors: ErrorList)
-  fileHandler
-  =
+let private makeCompiler ink title (errors: ErrorList) fileHandler =
   let errorHandler: Ink.ErrorHandler =
     Ink.ErrorHandler(fun err t -> errors.Add(err, t))
 
@@ -85,10 +75,7 @@ let private makeCompiler
   )
 
 let private compile fileHandler title ink =
-  let errors =
-    new System.Collections.Generic.List<
-      string * Ink.ErrorType
-     >()
+  let errors = new System.Collections.Generic.List<string * Ink.ErrorType>()
 
   let compiler = makeCompiler ink title errors fileHandler
 
@@ -113,29 +100,21 @@ type ScriptTemplate = { title: string; ink: string }
 
 let private getTemplateList () =
   handler {
-    let! hostEnvironment =
-      Handler.plug<IWebHostEnvironment, _> ()
+    let! hostEnvironment = Handler.plug<IWebHostEnvironment, _> ()
 
     let contentRootPath = hostEnvironment.WebRootPath
 
     return
-      System.IO.Path.Join(
-        contentRootPath,
-        "assets",
-        "shared",
-        "templates"
-      )
+      System.IO.Path.Join(contentRootPath, "assets", "shared", "templates")
       |> fun path ->
         System.IO.Directory.EnumerateFiles(path, "*.ink")
-        |> Seq.map
-          System.IO.Path.GetFileNameWithoutExtension
+        |> Seq.map System.IO.Path.GetFileNameWithoutExtension
         |> Seq.toList
   }
 
 let private getTemplate title =
   handler {
-    let! hostEnvironment =
-      Handler.plug<IWebHostEnvironment, _> ()
+    let! hostEnvironment = Handler.plug<IWebHostEnvironment, _> ()
 
     let contentRootPath = hostEnvironment.WebRootPath
 
@@ -213,7 +192,6 @@ type EditorInput =
   | DemoEditor of {| ink: string; title: string |}
   | UserEditor of Script
 
-
 let editor input =
   handler {
     let! token = Handler.getCsrfToken ()
@@ -227,6 +205,14 @@ let editor input =
       match input with
       | DemoEditor de -> de.ink
       | UserEditor ue -> ue.ink
+
+    let collaborateButton =
+      [ _class_ B.Mods.isInfo
+        _type_ "button"
+        _id_ "collab-button"
+        _onclick_
+          "fe.getCollaborationLink()" ],
+      [ _text "Copy live edit invite" ]
 
     let controls =
       match input with
@@ -265,26 +251,28 @@ let editor input =
                 _name_ "unpublish"
                 _class_ B.Mods.isDanger
                 _value_ (existing.id.ToString()) ],
-              [ _text "Unpublish" ] ]
+              [ _text "Unpublish" ]
+            collaborateButton ]
       | DemoEditor _ ->
-        B.button
-          [ _id_ "run-button"
-            Attr.create
-              "hx-on:htmx:config-request"
-              "let ink = fe.getEditor().state.doc.toString(); event.detail.parameters.ink = ink; localStorage.setItem('ink', ink); localStorage.setItem('title', document.getElementById('story-title').value);"
-            Hx.post "/playground/playthrough"
-            Hx.select "#page"
-            Hx.targetCss "#page"
-            _disabled_
-            _name_ "Script"
-            _class_ B.Mods.isPrimary ]
-          [ _text "Test your script" ]
+        B.buttons
+          []
+          [ [ _id_ "run-button"
+              Attr.create
+                "hx-on:htmx:config-request"
+                "let ink = fe.getEditor().state.doc.toString(); event.detail.parameters.ink = ink; localStorage.setItem('ink', ink); localStorage.setItem('title', document.getElementById('story-title').value);"
+              Hx.post "/playground/playthrough"
+              Hx.select "#page"
+              Hx.targetCss "#page"
+              _disabled_
+              _name_ "Script"
+              _class_ B.Mods.isPrimary ],
+            [ _text "Test your script" ]
+            collaborateButton ]
 
     B.form
       token
       [ _id_ "editor-form"
-        _class_
-          "is-flex is-flex-direction-column is-items-align-stretch"
+        _class_ "is-flex is-flex-direction-column is-items-align-stretch"
         _style_ "height: 100%;" ]
       [ B.field (fun info ->
           { info with
@@ -299,8 +287,7 @@ let editor input =
                       _value_ title
                       _onkeyup_
                         "document.getElementById('run-button').setAttribute('disabled', true);"
-                      _onblur_
-                        "fe.callLinter(fe.getEditor());"
+                      _onblur_ "fe.callLinter(fe.getEditor());"
                       _placeholder_ "Your script title" ] ] })
         match input with
         | DemoEditor _ ->
@@ -313,24 +300,18 @@ let editor input =
             [ _class_ B.Mods.isPrimary ]
             [ _text "This script is published at "
               _a [ _href_ url ] [ _text url ]
-              _text
-                " and any changes you make will be immediately visible." ]
+              _text " and any changes you make will be immediately visible." ]
         | UserEditor _ -> _text ""
         _div [ _hidden_; _id_ "last-saved" ] [ _text ink ]
         _div
           [ _class_
               "field is-flex-grow-1 is-flex is-flex-direction-column is-items-align-stretch" ]
-          [ _label
-              [ _class_ "label" ]
-              [ _text "The script" ]
+          [ _label [ _class_ "label" ] [ _text "The script" ]
             _div
-              [ _id_ "codemirror"
-                _class_ "control"
-                _style_ "height: 100%;" ]
+              [ _id_ "codemirror"; _class_ "control"; _style_ "height: 100%;" ]
               [ _script [] [ _text "fe.addEditor()" ] ] ]
         _div
-          [ _class_
-              "field is-grouped is-grouped-centered is-flex-grow-0" ]
+          [ _class_ "field is-grouped is-grouped-centered is-flex-grow-0" ]
           [ _div
               [ _class_ "control" ]
               [ _div [ _class_ "control" ] [ controls ] ] ] ]
@@ -376,16 +357,13 @@ let scriptManager (editorInput: EditorInput) =
                      _li
                        []
                        [ _a
-                           [ _onclick_
-                               $"fe.addText({encode i})" ]
+                           [ _onclick_ $"fe.addText({encode i})" ]
                            [ _text i ] ])) ] ])
       |> fun list ->
           [ B.title [ _class_ "is-6" ] title
             B.content
               []
-              (List.intersperse
-                [ _hr [ _class_ "mt-1 mb-1" ] ]
-                list
+              (List.intersperse [ _hr [ _class_ "mt-1 mb-1" ] ] list
                |> List.concat) ]
 
 
@@ -393,8 +371,7 @@ let scriptManager (editorInput: EditorInput) =
       speakers
       |> List.map (fun speaker ->
         {| name = speaker.name
-           subItems =
-            speaker.emotes |> List.map (fun e -> e.emote) |})
+           subItems = speaker.emotes |> List.map (fun e -> e.emote) |})
       |> makeMenu "Speakers" "Emotes"
 
     let! scenes = StoryAssets.findScenes ()
@@ -403,22 +380,17 @@ let scriptManager (editorInput: EditorInput) =
       scenes
       |> List.map (fun scene ->
         {| name = scene.name
-           subItems =
-            scene.tags |> List.map (fun s -> s.tag) |})
+           subItems = scene.tags |> List.map (fun s -> s.tag) |})
       |> makeMenu "Scenes" "Tags"
 
     let! music = StoryAssets.findAllMusic ()
 
     let musicMenu =
       music
-      |> List.map (fun music ->
-        {| name = music.name; subItems = [] |})
+      |> List.map (fun music -> {| name = music.name; subItems = [] |})
       |> makeMenu "Music" ""
 
-    let sideBar =
-      _div
-        []
-        (List.concat [ speakerMenu; sceneMenu; musicMenu ])
+    let sideBar = _div [] (List.concat [ speakerMenu; sceneMenu; musicMenu ])
 
     return
       _div
@@ -427,13 +399,11 @@ let scriptManager (editorInput: EditorInput) =
             []
             [ B.encloseAttr
                 B.column
-                [ _class_ "is-three-quarters"
-                  _style_ "height: 100vh;" ]
+                [ _class_ "is-three-quarters"; _style_ "height: 100vh;" ]
                 form
               B.encloseAttr
                 B.column
-                [ _style_
-                    "overflow-y: auto; max-height: 100vh;" ]
+                [ _style_ "overflow-y: auto; max-height: 100vh;" ]
                 sideBar ] ]
       |> List.singleton
   }
@@ -458,12 +428,9 @@ let createGet viewContext =
                wrapperAttrs = [] |}
             (List.map
               (fun st -> _option [] [ _text st ])
-              ("Pick a template:"
-               :: (scriptTemplates |> List.sort))) ]
+              ("Pick a template:" :: (scriptTemplates |> List.sort))) ]
 
-    let html =
-      [ B.title [] "Choose a starting template to modify"
-        chooser ]
+    let html = [ B.title [] "Choose a starting template to modify"; chooser ]
 
     return Response.ofHtml (template "Create script" html)
   }
@@ -485,34 +452,25 @@ let createPost viewContext =
     let! template = viewContext.contextualTemplate
     let html = template "Edit Script" view
 
-    return
-      Response.withHxPushUrl $"/script/{script.id}"
-      >> Response.ofHtml html
+    return Response.withHxPushUrl $"/script/{script.id}" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> post "/script/create"
 
 let editGet viewContext =
   handler {
-    let! id =
-      Handler.fromCtx (
-        Request.getRoute >> fun d -> d.GetGuid "guid"
-      )
+    let! id = Handler.fromCtx (Request.getRoute >> fun d -> d.GetGuid "guid")
 
     let! existing =
       load id
-      |> Handler.ofOption (
-        Response.withStatusCode 404 >> Response.ofEmpty
-      )
+      |> Handler.ofOption (Response.withStatusCode 404 >> Response.ofEmpty)
 
     let! view = scriptManager (UserEditor existing)
     let! template = viewContext.contextualTemplate
 
     let html = template "Edit Script" view
 
-    return
-      Response.withHxPushUrl $"/script/{id}"
-      >> Response.ofHtml html
+    return Response.withHxPushUrl $"/script/{id}" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> get "/script/{guid:guid}"
@@ -534,27 +492,43 @@ let demoGet viewContext =
 
     let html = template "Edit Script" view
 
-    return
-      Response.withHxPushUrl $"/script/demo"
-      >> Response.ofHtml html
+    return Response.withHxPushUrl $"/script/demo" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> get "/script/demo"
 
+let collabGet viewContext =
+  handler {
+    let! demoText =
+      Content.getContentText "examples/AloneInTheDark.ink"
+      |> Handler.map (fun ink ->
+        ink.Split '\n' |> Seq.skip 1 |> String.concat "\n")
+
+    let demo =
+      DemoEditor
+        {| title = "Alone in the dark"
+           ink = demoText |}
+
+    let! view = scriptManager demo
+    let! template = viewContext.contextualTemplate
+
+    let html = template "Edit Script" view
+
+    return Response.withHxPushUrl $"/script/demo" >> Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> get "/script-collab/{groupName}"
+
 let editPost viewContext =
   handler {
-    let! id =
-      Handler.fromCtx (
-        Request.getRoute >> fun d -> d.GetGuid "guid"
-      )
+    let! id = Handler.fromCtx (Request.getRoute >> fun d -> d.GetGuid "guid")
 
     let! input =
       Handler.formDataOrFail
         (Response.withStatusCode 400 >> Response.ofEmpty)
         (fun data ->
           Option.map2
-            (fun title ink ->
-              {| title = title; ink = ink |})
+            (fun title ink -> {| title = title; ink = ink |})
             (data.TryGetStringNonEmpty "title")
             (data.TryGetString "ink"))
 
@@ -563,15 +537,12 @@ let editPost viewContext =
 
     let inkJson, stats =
       match story.completed with
-      | Some { compiled = story; stats = stats } ->
-        story.ToJson(), Some stats
+      | Some { compiled = story; stats = stats } -> story.ToJson(), Some stats
       | None -> "{}", None
 
     let! existingScript =
       load id
-      |> Handler.ofOption (
-        Response.withStatusCode 400 >> Response.ofEmpty
-      )
+      |> Handler.ofOption (Response.withStatusCode 400 >> Response.ofEmpty)
 
     let script =
       { existingScript with
@@ -597,8 +568,7 @@ let private listView scripts =
     B.block
       []
       [ _a
-          [ _class_ "button is-fullwidth is-primary"
-            _href_ "/script/create" ]
+          [ _class_ "button is-fullwidth is-primary"; _href_ "/script/create" ]
           [ _text "Start a new script!" ] ]
     _table
       [ _class_ "table is-fullwidth" ]
@@ -620,40 +590,34 @@ let private listView scripts =
                [ _td
                    []
                    [ _a
-                       [ _href_
-                           $"/script/{s.id.ToString()}" ]
+                       [ _href_ $"/script/{s.id.ToString()}" ]
                        [ _text s.title ] ]
                  _td
                    []
                    [ _text (
                        s.stats
-                       |> Option.map (fun stats ->
-                         $"{stats.words}")
+                       |> Option.map (fun stats -> $"{stats.words}")
                        |> Option.defaultValue "??"
                      ) ]
                  _td
                    []
                    [ _text (
                        s.stats
-                       |> Option.map (fun stats ->
-                         $"{stats.choices}")
+                       |> Option.map (fun stats -> $"{stats.choices}")
                        |> Option.defaultValue "??"
                      ) ]
                  _td
                    []
                    [ B.iconText
                        []
-                       [ if
-                           Option.isSome s.publishedUrl
-                         then
+                       [ if Option.isSome s.publishedUrl then
                            B.icon
                              "check-outline"
                              [ _class_ "has-text-primary" ] ] ]
                  _td
                    []
                    [ B.delete
-                       [ Hx.delete
-                           $"/script/{s.id.ToString()}"
+                       [ Hx.delete $"/script/{s.id.ToString()}"
                          Hx.targetCss "#page"
                          Hx.select "#page"
                          Hx.confirm
@@ -665,14 +629,10 @@ let listGet (viewContext: ViewContext) =
     let! user = User.ensureSessionUser ()
     let! documentStore = Handler.plug<IDocumentStore, _> ()
 
-    let session =
-      documentStore.QuerySession(user.id.ToString())
+    let session = documentStore.QuerySession(user.id.ToString())
 
     let! scripts =
-      session
-        .Query<Script>()
-        .OrderBySql("mt_last_modified desc")
-        .ToListAsync()
+      session.Query<Script>().OrderBySql("mt_last_modified desc").ToListAsync()
       |> Handler.returnTask
 
     let view = listView scripts
@@ -685,25 +645,18 @@ let listGet (viewContext: ViewContext) =
 
 let editDelete viewContext =
   handler {
-    let! id =
-      Handler.fromCtx (
-        Request.getRoute >> fun d -> d.GetGuid "guid"
-      )
+    let! id = Handler.fromCtx (Request.getRoute >> fun d -> d.GetGuid "guid")
 
     let! user = User.ensureSessionUser ()
     let! documentStore = Handler.plug<IDocumentStore, _> ()
 
-    let session =
-      documentStore.LightweightSession(user.id.ToString())
+    let session = documentStore.LightweightSession(user.id.ToString())
 
     session.Delete<Script> id
     do! session.SaveChangesAsync() |> Handler.returnTask'
 
     let! scripts =
-      session
-        .Query<Script>()
-        .OrderBySql("mt_last_modified desc")
-        .ToListAsync()
+      session.Query<Script>().OrderBySql("mt_last_modified desc").ToListAsync()
       |> Handler.returnTask
 
     let view = listView scripts
@@ -721,9 +674,7 @@ let createPublishedUrl script =
     return!
       Handler.fromCtx (fun ctx ->
         let scheme =
-          if
-            ctx.Request.Host.Value.Contains "localhost"
-          then
+          if ctx.Request.Host.Value.Contains "localhost" then
             "http://"
           else
             "https://"
@@ -740,9 +691,7 @@ let publishPost viewContext =
 
     let! existing =
       load scriptId
-      |> Handler.ofOption (
-        Response.withStatusCode 400 >> Response.ofEmpty
-      )
+      |> Handler.ofOption (Response.withStatusCode 400 >> Response.ofEmpty)
 
     let! session = DocStore.startSession ()
     let! publishedUrl = createPublishedUrl existing
@@ -773,9 +722,7 @@ let unpublishPost viewContext =
 
     let! existing =
       load scriptId
-      |> Handler.ofOption (
-        Response.withStatusCode 400 >> Response.ofEmpty
-      )
+      |> Handler.ofOption (Response.withStatusCode 400 >> Response.ofEmpty)
 
     let! session = DocStore.startSession ()
 
@@ -799,15 +746,10 @@ type LintResponseItem =
     message: string
     severity: string }
 
-let private inkToResponse
-  title
-  (error: string, t: Ink.ErrorType)
-  =
+let private inkToResponse title (error: string, t: Ink.ErrorType) =
   let lintMessageRegex =
     Regex(
-      "[A-Z]+: '"
-      + Regex.Escape title
-      + "' line (\d+): (.*)",
+      "[A-Z]+: '" + Regex.Escape title + "' line (\d+): (.*)",
       RegexOptions.Compiled
     )
 
@@ -835,9 +777,7 @@ type AutocompleteContent =
   { lists: string list
     globalVariables: string list }
 
-let private getAutocompleteContext
-  (story: Ink.Parsed.Story)
-  =
+let private getAutocompleteContext (story: Ink.Parsed.Story) =
   story.FindAll<Ink.Parsed.VariableAssignment>()
   |> Seq.map (fun v -> v.variableName)
   |> Set.ofSeq
@@ -855,44 +795,34 @@ let private getAutocompleteContext
 let lintPost =
   handler {
     let! json =
-      Handler.fromCtxTask
-        Request.getJson<{| ink: string; title: string |}>
+      Handler.fromCtxTask Request.getJson<{| ink: string; title: string |}>
 
     let! headers = Handler.fromCtx Request.getHeaders
     let referrer = headers.GetString "Referer"
 
     let! fileHandler = Handler.plug<Ink.IFileHandler, _> ()
 
-    let compileResult =
-      compile fileHandler json.title json.ink
+    let compileResult = compile fileHandler json.title json.ink
 
-    let response =
-      compileResult.errors
-      |> Seq.map (inkToResponse json.title)
+    let response = compileResult.errors |> Seq.map (inkToResponse json.title)
 
     let story, stats =
       match compileResult.completed with
-      | Some result ->
-        result.compiled.ToJson(), Some result.stats
+      | Some result -> result.compiled.ToJson(), Some result.stats
       | None -> "{}", None
 
     let autocompleteContext =
       compileResult.completed
-      |> Option.map (fun { parsed = parsed } ->
-        getAutocompleteContext parsed)
+      |> Option.map (fun { parsed = parsed } -> getAutocompleteContext parsed)
 
     if referrer.Length > 36 then
       match
-        System.Guid.TryParse(
-          referrer.Substring(referrer.Length - 36, 36)
-        )
+        System.Guid.TryParse(referrer.Substring(referrer.Length - 36, 36))
       with
       | true, id ->
         let! existingScript =
           load id
-          |> Handler.ofOption (
-            Response.withStatusCode 400 >> Response.ofEmpty
-          )
+          |> Handler.ofOption (Response.withStatusCode 400 >> Response.ofEmpty)
 
         let script =
           { existingScript with
@@ -935,8 +865,7 @@ let makePlaygroundScript ink =
           writerId = fakeUserId.ToString() }
 
       return script
-    | None ->
-      return failwithf "The playground Ink didn't compile"
+    | None -> return failwithf "The playground Ink didn't compile"
   }
 
 let getExampleScript filename =
@@ -944,9 +873,7 @@ let getExampleScript filename =
     let fakeUserId = System.Guid()
 
     let! ink =
-      Content.getContentText (
-        System.IO.Path.Join("examples", filename)
-      )
+      Content.getContentText (System.IO.Path.Join("examples", filename))
 
     let title =
       let firstLine = ink.Split('\n', 2).[0]
@@ -975,11 +902,7 @@ let getExampleScript filename =
           writerId = fakeUserId.ToString() }
 
       return script
-    | None ->
-      return
-        failwithf
-          "Example file %s did not compile!"
-          filename
+    | None -> return failwithf "Example file %s did not compile!" filename
   }
 
 let nav =
@@ -987,9 +910,7 @@ let nav =
 
     match! User.getSessionUser () with
     | Some _ ->
-      _a
-        [ _class_ "navbar-item"; _href_ "/script" ]
-        [ _text "Scripts" ]
+      _a [ _class_ "navbar-item"; _href_ "/script" ] [ _text "Scripts" ]
     | None ->
       _a
         [ _class_ "navbar-item"; _href_ "/script/demo" ]
@@ -1004,6 +925,7 @@ module Service =
       createPost viewContext
       editGet viewContext
       demoGet viewContext
+      collabGet viewContext
       editPost viewContext
       editDelete viewContext
       listGet viewContext
@@ -1013,13 +935,11 @@ module Service =
 
   let addService: AddService =
     fun _ sc ->
-      sc.AddScoped<Ink.IFileHandler, ScriptFileHandler>()
-      |> ignore
+      sc.AddScoped<Ink.IFileHandler, ScriptFileHandler>() |> ignore
 
       sc.ConfigureMarten(fun (storeOpts: StoreOptions) ->
         storeOpts.Schema
           .For<Script>()
           .MultiTenanted()
-          .Metadata(fun m ->
-            m.TenantId.MapTo(fun x -> x.writerId))
+          .Metadata(fun m -> m.TenantId.MapTo(fun x -> x.writerId))
         |> ignore)

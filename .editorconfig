@@ -1,3 +1,8 @@
 [*.fs]
-max_line_length = 60
+max_line_length = 80
 indent_size = 2
+
+[*.ts]
+max_line_length = 80
+indent_size = 2
+tab_width = 2

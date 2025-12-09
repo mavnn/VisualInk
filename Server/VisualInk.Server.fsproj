@@ -14,8 +14,10 @@
     <Compile Include="src\DocStore.fs" />
     <Compile Include="src\StoryAssets.fs" />
     <Compile Include="src\Script.fs" />
+    <Compile Include="src\CollabHub.fs" />
     <Compile Include="src\Playthrough.fs" />
     <Compile Include="src\InfoPages.fs" />
+    <Compile Include="src\Logo.fs" />
     <Compile Include="src\Program.fs" />
   </ItemGroup>
 
