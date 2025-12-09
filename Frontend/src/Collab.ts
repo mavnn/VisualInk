@@ -15,14 +15,20 @@ const cursorEffect = StateEffect.define<ToolTipInfo>()
 
 const cursorExtension = (tag: string) => {
   const cursorTransactionExtender = EditorState.transactionExtender.of((tr) => {
-    if (!tr.docChanged && !tr.selection && !tr.effects.filter(effect => effect.is(cursorEffect))) { return null }
-    let ourTooltips = getCursorPositions(tr.state)
-    let existingTooltips = tr.state.field(cursorTooltipField)
-    let updated = Object.fromEntries(
-      Object.entries(existingTooltips).map(
-        ([tag, positions]) => [tag, positions.map(pos => tr.changes.mapPos(pos))])
-    )
-    return { effects: cursorEffect.of({ ...updated, [tag]: ourTooltips }) }
+    try {
+      if (!tr.docChanged && !tr.selection) { return null }
+      let ourTooltips = getCursorPositions(tr.state)
+      let existingTooltips = tr.state.field(cursorTooltipField)
+      let updated = Object.fromEntries(
+        Object.entries(existingTooltips).map(
+          ([tag, positions]) => [tag, positions.map(pos => tr.changes.mapPos(pos))])
+      )
+      return { effects: cursorEffect.of({ ...updated, [tag]: ourTooltips }) }
+    } catch(e) {
+      // If anything weird happens, ignore the effects
+      console.warn("Cursor weirdness")
+      return {}
+    }
   })
 
   const cursorTooltipField = StateField.define<ToolTipInfo>({
