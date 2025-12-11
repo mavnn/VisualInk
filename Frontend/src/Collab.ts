@@ -197,7 +197,7 @@ export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token 
     setAttributes(speakerChooser, { closedby: "any" })
     let speakerChooserButtons = document.createElement("div")
     speakerChooserButtons.className = "box buttons"
-    for (const speaker of speakerInfo) {
+    for (const speaker of [{name: "Narrator", emotes: [] }, ...speakerInfo]) {
       let button = document.createElement("button")
       setAttributes(button, { type: "button" })
       button.className = "button"

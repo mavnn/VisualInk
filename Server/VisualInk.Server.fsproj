@@ -13,6 +13,7 @@
     <Compile Include="src\User.fs" />
     <Compile Include="src\DocStore.fs" />
     <Compile Include="src\StoryAssets.fs" />
+    <Compile Include="src\VisualInkPlugin.fs" />
     <Compile Include="src\Script.fs" />
     <Compile Include="src\CollabHub.fs" />
     <Compile Include="src\Playthrough.fs" />

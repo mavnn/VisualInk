@@ -86,7 +86,8 @@ export class InkEditor extends HTMLElement {
       if (storedTitle) { title = storedTitle }
     }
     if (doc.trim() === "") {
-      doc = this.textContent!.trim()
+      const code = this.querySelector("pre")?.textContent ?? ""
+      doc = code.trim()
     }
     let [_, pathRoot, maybeGroupName] = document.location.pathname.split("/", 3)
     let peerExtension

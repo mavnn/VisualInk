@@ -7,6 +7,7 @@ open Falco.Htmx
 open Prelude
 open Falco.Routing
 open View
+open VisualInkPlugin
 open System.Text.RegularExpressions
 open System.Text.Json.Serialization
 open System.Linq
@@ -70,7 +71,8 @@ let private makeCompiler ink title (errors: ErrorList) fileHandler =
     new Ink.Compiler.Options(
       sourceFilename = title,
       errorHandler = errorHandler,
-      fileHandler = fileHandler
+      fileHandler = fileHandler,
+      plugins = System.Collections.Generic.List [VisualInkPlugin() :> Ink.IPlugin]
     )
   )
 
