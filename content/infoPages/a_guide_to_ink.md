@@ -72,11 +72,15 @@ VAR speaker = "Bob" // error!
 The `speaker`, `scene`, and `music` variables are special variables that control the sound and images displayed by
 Visual Ink. Any other variables are all yours!
 
-Down the right of the script editor you'll see a list of speakers, scenes, and music that you have available. You
-can always upload more by going to the sections in the main menu bar.
+You can use the "Change" buttons at the top of the editor to automatically add a line in your script changing
+the speaker, scene, or music to something that exists in your library. Don't have the thing you need in your library?
+You can always upload more by going to the relevant section in the main menu bar.
 
-Useful quick tip: if you're keeping track of a number that goes up or down by one
-way of doing it.
+It can be really helpful to add variables to track things like money, resources, or hit points depending on the
+type of story you're writing.
+
+Useful quick tip: if you're keeping track of a number that goes up or down by one, we do that so often there's
+a special "cheat" way of doing it.
 
 <ink-element>
 

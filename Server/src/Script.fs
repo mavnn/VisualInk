@@ -206,115 +206,24 @@ let editor input =
       | DemoEditor de -> de.ink
       | UserEditor ue -> ue.ink
 
-    let collaborateButton =
-      [ _class_ B.Mods.isInfo
-        _type_ "button"
-        _id_ "collab-button"
-        _onclick_
-          "fe.getCollaborationLink()" ],
-      [ _text "Copy live edit invite" ]
+    return
+      Elem.create
+        "ink-editor"
+        [ yield _id_ "codemirror"
+          yield _class_ "control"
+          yield _style_ "height: 100%;"
+          yield _title_ title
+          yield Attr.create "token-value" token.RequestToken
+          yield Attr.create "token-header" token.HeaderName
+          match input with
+          | DemoEditor _ -> ()
+          | UserEditor existing ->
+            yield Attr.create "script-id" (existing.id.ToString())
 
-    let controls =
-      match input with
-      | UserEditor existing ->
-        B.buttons
-          []
-          [ [ _id_ "run-button"
-              Hx.post "/playthrough/start"
-              HxMorph.morphOuterHtml
-              Hx.select "#page"
-              Hx.targetCss "#page"
-              _disabled_
-              _name_ "script"
-              _class_ B.Mods.isPrimary
-              _value_ (existing.id.ToString()) ],
-            [ _text "Run" ]
             match existing.publishedUrl with
-            | None ->
-              [ _id_ "publish"
-                Hx.confirm
-                  "Are you sure? This makes your game available publicly."
-                Hx.select "#page"
-                Hx.targetCss "#page"
-                Hx.post "/script/publish"
-                _name_ "publish"
-                _class_ B.Mods.isDanger
-                _value_ (existing.id.ToString()) ],
-              [ _text "Publish" ]
-            | Some _ ->
-              [ _id_ "unpublish"
-                Hx.confirm
-                  "Are you sure? Your game will be unavailable until you publish it again."
-                Hx.select "#page"
-                Hx.targetCss "#page"
-                Hx.post "/script/unpublish"
-                _name_ "unpublish"
-                _class_ B.Mods.isDanger
-                _value_ (existing.id.ToString()) ],
-              [ _text "Unpublish" ]
-            collaborateButton ]
-      | DemoEditor _ ->
-        B.buttons
-          []
-          [ [ _id_ "run-button"
-              Attr.create
-                "hx-on:htmx:config-request"
-                "let ink = fe.getEditor().state.doc.toString(); event.detail.parameters.ink = ink; localStorage.setItem('ink', ink); localStorage.setItem('title', document.getElementById('story-title').value);"
-              Hx.post "/playground/playthrough"
-              Hx.select "#page"
-              Hx.targetCss "#page"
-              _disabled_
-              _name_ "Script"
-              _class_ B.Mods.isPrimary ],
-            [ _text "Test your script" ]
-            collaborateButton ]
-
-    B.form
-      token
-      [ _id_ "editor-form"
-        _class_ "is-flex is-flex-direction-column is-items-align-stretch"
-        _style_ "height: 100%;" ]
-      [ B.field (fun info ->
-          { info with
-              label = Some "Title"
-              field = [ _class_ "is-flex-grow-0" ]
-              input =
-                [ _input
-                    [ _class_ "input"
-                      _type_ "text"
-                      _name_ "title"
-                      _id_ "story-title"
-                      _value_ title
-                      _onkeyup_
-                        "document.getElementById('run-button').setAttribute('disabled', true);"
-                      _onblur_ "fe.callLinter(fe.getEditor());"
-                      _placeholder_ "Your script title" ] ] })
-        match input with
-        | DemoEditor _ ->
-          _p
-            [ _class_ "has-text-danger mb-2" ]
-            [ _text
-                "To save changes and add images, you'll need to create an account." ]
-        | UserEditor { publishedUrl = Some url } ->
-          B.notification
-            [ _class_ B.Mods.isPrimary ]
-            [ _text "This script is published at "
-              _a [ _href_ url ] [ _text url ]
-              _text " and any changes you make will be immediately visible." ]
-        | UserEditor _ -> _text ""
-        _div [ _hidden_; _id_ "last-saved" ] [ _text ink ]
-        _div
-          [ _class_
-              "field is-flex-grow-1 is-flex is-flex-direction-column is-items-align-stretch" ]
-          [ _label [ _class_ "label" ] [ _text "The script" ]
-            _div
-              [ _id_ "codemirror"; _class_ "control"; _style_ "height: 100%;" ]
-              [ _script [] [ _text "fe.addEditor()" ] ] ]
-        _div
-          [ _class_ "field is-grouped is-grouped-centered is-flex-grow-0" ]
-          [ _div
-              [ _class_ "control" ]
-              [ _div [ _class_ "control" ] [ controls ] ] ] ]
+            | Some url -> yield Attr.create "published-url" (url)
+            | None -> () ]
+        [ _pre [] [ _text ink ] ]
 
   }
 
@@ -324,88 +233,27 @@ let scriptManager (editorInput: EditorInput) =
 
     let! speakers = StoryAssets.findSpeakers ()
 
-    let encode v =
-      v
-      |> System.Text.Json.JsonSerializer.Serialize
-      |> System.Net.WebUtility.HtmlEncode
-
-    let makeMenu
-      title
-      subItemName
-      (items:
-        {| name: string
-           subItems: string list |} list)
-      =
-      items
-      |> List.map (fun item ->
-        match item.subItems with
-        | [] ->
-          [ _a
-              [ _onclick_ $"fe.addText({encode item.name})" ]
-              [ _text item.name ] ]
-        | subItems ->
-          [ _a
-              [ _onclick_ $"fe.addText({encode item.name})" ]
-              [ _text item.name ]
-            _details
-              []
-              [ _summary [] [ _text subItemName ]
-                _ul
-                  []
-                  (subItems
-                   |> List.map (fun i ->
-                     _li
-                       []
-                       [ _a
-                           [ _onclick_ $"fe.addText({encode i})" ]
-                           [ _text i ] ])) ] ])
-      |> fun list ->
-          [ B.title [ _class_ "is-6" ] title
-            B.content
-              []
-              (List.intersperse [ _hr [ _class_ "mt-1 mb-1" ] ] list
-               |> List.concat) ]
-
-
-    let speakerMenu =
-      speakers
-      |> List.map (fun speaker ->
-        {| name = speaker.name
-           subItems = speaker.emotes |> List.map (fun e -> e.emote) |})
-      |> makeMenu "Speakers" "Emotes"
-
     let! scenes = StoryAssets.findScenes ()
-
-    let sceneMenu =
-      scenes
-      |> List.map (fun scene ->
-        {| name = scene.name
-           subItems = scene.tags |> List.map (fun s -> s.tag) |})
-      |> makeMenu "Scenes" "Tags"
 
     let! music = StoryAssets.findAllMusic ()
 
-    let musicMenu =
-      music
-      |> List.map (fun music -> {| name = music.name; subItems = [] |})
-      |> makeMenu "Music" ""
+    let speakerJson = _div [_id_ "speaker-json"; _hidden_] [
+       _text (serializeJson speakers)
+    ]
 
-    let sideBar = _div [] (List.concat [ speakerMenu; sceneMenu; musicMenu ])
+    let musicJson = _div [_id_ "music-json"; _hidden_ ] [
+       _text (serializeJson music)
+    ]
+
+    let sceneJson = _div [_id_ "scene-json"; _hidden_ ] [
+       _text (serializeJson scenes)
+    ]
 
     return
-      _div
-        [ _id_ "editor" ]
-        [ B.columns
-            []
-            [ B.encloseAttr
-                B.column
-                [ _class_ "is-three-quarters"; _style_ "height: 100vh;" ]
-                form
-              B.encloseAttr
-                B.column
-                [ _style_ "overflow-y: auto; max-height: 100vh;" ]
-                sideBar ] ]
-      |> List.singleton
+      [ _div [ _id_ "editor" ] [ form ]
+        speakerJson
+        musicJson
+        sceneJson ]
   }
 
 let createGet viewContext =
@@ -778,19 +626,20 @@ type AutocompleteContent =
     globalVariables: string list }
 
 let private getAutocompleteContext (story: Ink.Parsed.Story) =
-  story.FindAll<Ink.Parsed.VariableAssignment>()
-  |> Seq.map (fun v -> v.variableName)
-  |> Set.ofSeq
-  |> printfn "%A"
-
   story.ResolveWeavePointNaming()
+  let globalVariables =
+    story.FindAll<Ink.Parsed.VariableAssignment>()
+    |> Seq.map (fun v -> v.variableName)
+    |> Set.ofSeq
+    |> List.ofSeq
 
-  story.FindAll<Ink.Parsed.Identifier>()
-  |> Seq.map (fun v -> v.ToString())
-  |> Set.ofSeq
-  |> printfn "%A"
 
-  { lists = []; globalVariables = [] }
+  // story.FindAll<Ink.Parsed.Identifier>()
+  // |> Seq.map (fun v -> v.ToString())
+  // |> Set.ofSeq
+  // |> printfn "%A"
+
+  { lists = []; globalVariables = globalVariables }
 
 let lintPost =
   handler {
@@ -804,7 +653,7 @@ let lintPost =
 
     let compileResult = compile fileHandler json.title json.ink
 
-    let response = compileResult.errors |> Seq.map (inkToResponse json.title)
+    let lines = compileResult.errors |> Seq.map (inkToResponse json.title)
 
     let story, stats =
       match compileResult.completed with
@@ -814,6 +663,7 @@ let lintPost =
     let autocompleteContext =
       compileResult.completed
       |> Option.map (fun { parsed = parsed } -> getAutocompleteContext parsed)
+      |> Option.defaultValue { lists = []; globalVariables = ["speaker";"scene";"music"]}
 
     if referrer.Length > 36 then
       match
@@ -836,7 +686,7 @@ let lintPost =
     else
       do ()
 
-    return Response.ofJson response
+    return Response.ofJson {|lines = lines; autocompleteContext = autocompleteContext |}
   }
   |> Handler.flatten
   |> post "/script/lint"
