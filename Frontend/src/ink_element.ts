@@ -31,7 +31,7 @@ export class InkElement extends HTMLElement {
       doc: text,
       extensions: [
         syntaxHighlighting(defaultHighlightStyle),
-        InkLanguageSupport,
+        InkLanguageSupport({ dialect: "visualink"}),
         EditorState.readOnly.of(true),
         EditorView.editable.of(false)
       ]
@@ -126,7 +126,7 @@ export class InkEditor extends HTMLElement {
             ]
         }),
         changeListener(token),
-        InkLanguageSupport,
+        InkLanguageSupport({ dialect: "visualink" }),
         controlExtension({ startingTitle: title, scriptId, publishedUrl, token })
       ],
     });

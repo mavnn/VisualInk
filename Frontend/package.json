@@ -26,7 +26,7 @@
     "@codemirror/autocomplete": "^6.19.0",
     "@codemirror/collab": "^6.1.1",
     "@codemirror/lint": "^6.9.0",
-    "@mavnn/codemirror-lang-ink": "0.9.9",
+    "@mavnn/codemirror-lang-ink": "0.9.14",
     "@microsoft/signalr": "^10.0.0",
     "codemirror": "^6.0.2",
     "htmx.org": "^2.0.7",

@@ -319,6 +319,6 @@ to build more complex branching, "sub-stories" that can appear in multiple place
 in the novel, and we can add actual game mechanics such as random chances of success
 or failure.
 
-We'll be adding more examples here as the site grows, but if you don't want to wait the
-company who created Ink also created the [Writing With Ink](https://github.com/inkle/ink/blob/master/Documentation/WritingWithInk.md) guide that covers everything in the language. It's quite dense, but it really does
-cover the whole thing.
+When you feel like you're ready to take things to the next level, check out some of
+Ink's more [advanced features](/info/advanced_ink). But do be warned - if the things here aren't making sense
+yet, it'll be less confusing if you master these first!

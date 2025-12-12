@@ -44,21 +44,25 @@ type ScriptFileHandler(docStore: IDocumentStore, userService: User.IUserService)
     member _.ResolveInkFilename includeName = includeName
 
     member _.LoadInkFileContents(fullFilename: string) : string =
-      let userId = userService.GetUserId()
+      match isPluginInclude fullFilename with
+      | Some pluginInput ->
+        generatePluginInclude pluginInput
+      | None ->
+        let userId = userService.GetUserId()
 
-      match userId with
-      | Some uid ->
-        let session = docStore.QuerySession(uid.ToString())
+        match userId with
+        | Some uid ->
+          let session = docStore.QuerySession(uid.ToString())
 
-        let script =
-          session
-            .Query<Script>()
-            .Where(fun s -> s.title = fullFilename)
-            .OrderBySql("mt_last_modified desc")
-            .First()
+          let script =
+            session
+              .Query<Script>()
+              .Where(fun s -> s.title = fullFilename)
+              .OrderBySql("mt_last_modified desc")
+              .First()
 
-        script.ink
-      | None -> failwithf "Script '%s' not found" fullFilename
+          script.ink
+        | None -> failwithf "Script '%s' not found" fullFilename
 
 type ErrorList = System.Collections.Generic.List<string * Ink.ErrorType>
 
@@ -223,7 +227,7 @@ let editor input =
             yield Attr.create "script-id" (existing.id.ToString())
 
             match existing.publishedUrl with
-            | Some url -> yield Attr.create "published-url" (url)
+            | Some url -> yield Attr.create "published-url" url
             | None -> () ]
         [ _pre [] [ _text ink ] ]
 

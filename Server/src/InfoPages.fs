@@ -20,7 +20,7 @@ module B = Bulma
 
        *)
 let private mdToHtml path =
-    Content.getContentText path |> Handler.map Markdown.ToHtml
+  Content.getContentText path |> Handler.map Markdown.ToHtml
 
 let private mdPage title path viewContext =
   handler {
@@ -28,17 +28,13 @@ let private mdPage title path viewContext =
 
     let! markdown = mdToHtml path
 
-    let content =
-      [ B.content [ Hx.boostOff ] [ _text markdown ] ]
+    let content = [ B.content [ Hx.boostOff ] [ _text markdown ] ]
 
     return Response.ofHtml (template title content)
   }
 
 let private privacyNotice viewContext =
-  mdPage
-    "Privacy Notice"
-    "infoPages/privacy.md"
-    viewContext
+  mdPage "Privacy Notice" "infoPages/privacy.md" viewContext
   |> Handler.flatten
   |> get "/info/privacy"
 
@@ -48,25 +44,22 @@ let private about viewContext =
   |> get "/info/about"
 
 let private inkGuide viewContext =
-  mdPage
-    "The Ink cheat sheet"
-    "infoPages/a_guide_to_ink.md"
-    viewContext
+  mdPage "Ink basics cheat sheet" "infoPages/a_guide_to_ink.md" viewContext
   |> Handler.flatten
   |> get "/info/ink_guide"
 
+let private advancedInk viewContext =
+  mdPage "Advanced Ink" "infoPages/advanced_ink.md" viewContext
+  |> Handler.flatten
+  |> get "/info/advanced_ink"
+
 let footer: Handler<XmlNode, HttpHandler> =
   handler {
-    let! markdown =
-      mdToHtml "infoPages/footer_text.md"
+    let! markdown = mdToHtml "infoPages/footer_text.md"
 
     return
-      B.content
-        [ _class_ "has-text-centered" ]
-        [ _text markdown ]
-      |> B.encloseAttr
-        B.footer
-        [ _id_ "footer"; _style_ "bottom: 0px;" ]
+      B.content [ _class_ "has-text-centered" ] [ _text markdown ]
+      |> B.encloseAttr B.footer [ _id_ "footer"; _style_ "bottom: 0px;" ]
   }
 
 let nav =
@@ -74,12 +67,9 @@ let nav =
     []
     {| link = "Help and Info"
        dropdown =
-        [ B.navbarItemA
-            [ _href_ "/info/ink_guide" ]
-            [ _text "Ink cheat sheet" ]
-          B.navbarItemA
-            [ _href_ "/info/about" ]
-            [ _text "About Us" ] ]
+        [ B.navbarItemA [ _href_ "/info/ink_guide" ] [ _text "Ink cheat sheet" ]
+          B.navbarItemA [ _href_ "/info/advanced_ink" ] [ _text "Advanced Ink" ]
+          B.navbarItemA [ _href_ "/info/about" ] [ _text "About Us" ] ]
 
     |}
 
@@ -87,6 +77,7 @@ module Service =
   let endpoints viewContext =
     [ privacyNotice viewContext
       about viewContext
-      inkGuide viewContext ]
+      inkGuide viewContext
+      advancedInk viewContext ]
 
   let addService: AddService = fun _ -> id
