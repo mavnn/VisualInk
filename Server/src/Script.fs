@@ -761,6 +761,25 @@ let getExampleScript filename =
     | None -> return failwithf "Example file %s did not compile!" filename
   }
 
+let private getInkToolsStack viewContext =
+    handler {
+      let! path = Handler.fromCtx Request.getRoute
+      let name = path.GetStringNonEmpty "name"
+      let sizeStr = path.GetStringNonEmpty "size"
+      let nil = path.GetStringNonEmpty "nil"
+      match System.Int32.TryParse sizeStr with
+      | true, size ->
+        let! template = viewContext.contextualTemplate
+        let view =      
+          Elem.create "ink-element" [] [_pre [] [_code [] [ _text (generatePluginInclude (StackInclude (name, size, nil)))]]]
+        return Response.ofHtml (template "Generated stack include" [view])
+        
+      | false, _ ->
+        return Response.withStatusCode 400 >> Response.ofEmpty
+    }
+    |> Handler.flatten
+    |> get "/inkTools/{name}/{size}/{nil}"
+
 let nav =
   handler {
 
@@ -787,6 +806,7 @@ module Service =
       listGet viewContext
       publishPost viewContext
       unpublishPost viewContext
+      getInkToolsStack viewContext
       lintPost ]
 
   let addService: AddService =
