@@ -58,9 +58,7 @@ type PlaythroughDocument =
 let getStep previousStep (story: Ink.Runtime.Story) =
   handler {
     let getVar name bind =
-      story.variablesState.[name] :?> string
-      |> Option.ofObj
-      |> Option.bind bind
+      story.variablesState.[name] :?> string |> Option.ofObj |> Option.bind bind
 
     let getTag name =
       story.currentTags
@@ -71,13 +69,9 @@ let getStep previousStep (story: Ink.Runtime.Story) =
       getVar "speaker" (fun v ->
         if v = "Narrator" || v = "" then None else Some v)
 
-    let scene =
-      getVar "scene" (fun v ->
-        if v = "" then None else Some v)
+    let scene = getVar "scene" (fun v -> if v = "" then None else Some v)
 
-    let music =
-      getVar "music" (fun v ->
-        if v = "" then None else Some v)
+    let music = getVar "music" (fun v -> if v = "" then None else Some v)
 
     let emote = getTag "emote"
 
@@ -96,8 +90,7 @@ let getStep previousStep (story: Ink.Runtime.Story) =
 
     let choices =
       story.currentChoices
-      |> Seq.map (fun c ->
-        { index = c.index; text = c.text })
+      |> Seq.map (fun c -> { index = c.index; text = c.text })
       |> Seq.toArray
 
     return
@@ -112,15 +105,13 @@ let getStep previousStep (story: Ink.Runtime.Story) =
           sfx = sfx
           emote = emote
           animation = animation
-          finished =
-            not story.canContinue && choices.Length = 0
+          finished = not story.canContinue && choices.Length = 0
           stepCount = previousStep.stepCount + 1 }
   }
 
 let make script =
   handler {
-    let! logger =
-      Handler.plug<ILogger<PlaythroughDocument>, _> ()
+    let! logger = Handler.plug<ILogger<PlaythroughDocument>, _> ()
 
     let story = Ink.Runtime.Story script.inkJson
     story.add_onError (fun msg t -> logger.LogError(msg, t))
@@ -128,14 +119,10 @@ let make script =
     story.add_onChoosePathString (fun str arr ->
       logger.LogInformation(str, arr))
 
-    story.add_onDidContinue (fun () ->
-      logger.LogInformation "Continued!")
+    story.add_onDidContinue (fun () -> logger.LogInformation "Continued!")
 
     story.add_onMakeChoice (fun c ->
-      logger.LogInformation(
-        "Choice made {index}!",
-        c.index
-      ))
+      logger.LogInformation("Choice made {index}!", c.index))
 
     story
   }
@@ -146,14 +133,10 @@ let load (guid: System.Guid) =
 
     return!
       match user with
-      | Some _ ->
-        DocStore.load<PlaythroughDocument, _, _> guid
-      | None ->
-        DocStore.loadShared<PlaythroughDocument, _, _> guid
+      | Some _ -> DocStore.load<PlaythroughDocument, _, _> guid
+      | None -> DocStore.loadShared<PlaythroughDocument, _, _> guid
   }
-  |> Handler.ofOption (
-    Response.withStatusCode 404 >> Response.ofEmpty
-  )
+  |> Handler.ofOption (Response.withStatusCode 404 >> Response.ofEmpty)
 
 let private getRunnerSession () =
   User.getSessionUser ()
@@ -242,13 +225,9 @@ let private start script runAs =
     return guid
   }
 
-let private nextLink guid =
-  $"/playthrough/{guid.ToString()}"
+let private nextLink guid = $"/playthrough/{guid.ToString()}"
 
-let private playthroughHxAttrs
-  guid
-  (token: AntiforgeryTokenSet)
-  =
+let private playthroughHxAttrs guid (token: AntiforgeryTokenSet) =
   [ Hx.post (nextLink guid)
     Hx.headers [ token.HeaderName, token.RequestToken ] ]
 
@@ -263,14 +242,13 @@ let private makeChoiceMenu guid step token =
           [ yield! playthroughHxAttrs guid token
             _value_ (c.index.ToString())
             _name_ "choice"
-            _class_ "button is-link is-fullwidth" ]
+            _class_ "notification is-link choiceButton" ]
           [ _text c.text ])
       |> Seq.toList
     | true, _ ->
       let href =
         match step.runAs with
-        | RunAsWriter ->
-          $"/script/{step.scriptId.ToString()}"
+        | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
         | RunAsPublisher _ -> "/"
         | RunAsAnonymous -> "/script/demo"
 
@@ -278,45 +256,36 @@ let private makeChoiceMenu guid step token =
           [ Hx.swapOuterHtml
             Hx.select "#page"
             Hx.targetCss "#page"
-            _class_ "button is-link is-fullwidth"
+            _style_ "width: 100%;"
+            _class_ "notification is-link"
             _href_ href ]
           [ _text "The End" ] ]
 
   _div
-    [ _class_
-        "container is-fluid is-flex is-align-items-end has-text-centered" ]
-    [ _div
-        [ _class_ "buttons mb-5"; _style_ "width: 100%;" ]
-        choices ]
+    [ _class_ "container is-fluid is-flex is-align-items-end has-text-centered" ]
+    [ _div [ _class_ "buttons mb-5"; _style_ "width: 100%;" ] choices ]
 
 let private makeContentBox step =
   [ match step.speaker with
     | Some c ->
       yield
         _h3
-          [ _class_ "subtitle has-text-primary fade"
-            _id_ "character-name" ]
+          [ _class_ "subtitle has-text-primary fade"; _id_ "character-name" ]
           [ _textEnc $"{c}:" ]
     | None -> ()
-    yield
-      _p
-        [ _id_ "speech"; _class_ "fade" ]
-        [ _textEnc step.text ] ]
+    yield _p [ _id_ "speech"; _class_ "fade" ] [ _textEnc step.text ] ]
 
 let private makeAudio steps =
   handler {
     printfn "Current music: %A" steps.currentStep.music
+
     let! music =
-      match
-        steps.currentStep.finished, steps.currentStep.music
-      with
+      match steps.currentStep.finished, steps.currentStep.music with
       | false, Some music ->
         match steps.currentStep.runAs with
         | RunAsWriter -> StoryAssets.findMusic music
-        | RunAsPublisher guid ->
-          StoryAssets.findMusicAs (Some guid) music
-        | RunAsAnonymous ->
-          StoryAssets.findMusicAs None music
+        | RunAsPublisher guid -> StoryAssets.findMusicAs (Some guid) music
+        | RunAsAnonymous -> StoryAssets.findMusicAs None music
       | _ -> Handler.return' None
 
     let musicSrc =
@@ -329,8 +298,7 @@ let private makeAudio steps =
       | Some sfx ->
         match steps.currentStep.runAs with
         | RunAsWriter -> StoryAssets.findMusic sfx
-        | RunAsPublisher guid ->
-          StoryAssets.findMusicAs (Some guid) sfx
+        | RunAsPublisher guid -> StoryAssets.findMusicAs (Some guid) sfx
         | RunAsAnonymous -> StoryAssets.findMusicAs None sfx
       | None -> Handler.return' None
 
@@ -343,9 +311,7 @@ let private makeAudio steps =
       [ yield
           _audio
             [ _id_ "audio-background-music"
-              Attr.create
-                "hx-on::before-cleanup-element"
-                "fe.stopMusic(this)"
+              Attr.create "hx-on::before-cleanup-element" "fe.stopMusic(this)"
               _loop_
               _src_ musicSrc ]
             []
@@ -353,9 +319,7 @@ let private makeAudio steps =
           yield
             _audio
               [ _id_ "audio-sfx"
-                Attr.create
-                  "hx-on::before-cleanup-element"
-                  "fe.stopMusic(this)"
+                Attr.create "hx-on::before-cleanup-element" "fe.stopMusic(this)"
                 _src_ sfxSrc ]
               [] ]
   }
@@ -372,19 +336,15 @@ let private stepToSpeakerImage animation step =
   match step.show, nameToShow, step.emote with
   | false, _, _
   | _, None, _ ->
-    _img
-      [ _id_ $"img-speaker-{step.stepCount}"
-        _style_ "display: none;" ]
+    _img [ _id_ $"img-speaker-{step.stepCount}"; _style_ "display: none;" ]
     |> Handler.return'
   | true, Some char, emote ->
     handler {
       let! speaker =
         match step.runAs with
-        | RunAsPublisher guid ->
-          StoryAssets.findSpeakerAs (Some guid) char
+        | RunAsPublisher guid -> StoryAssets.findSpeakerAs (Some guid) char
         | RunAsWriter -> StoryAssets.findSpeaker char
-        | RunAsAnonymous ->
-          StoryAssets.findSpeakerAs None char
+        | RunAsAnonymous -> StoryAssets.findSpeakerAs None char
 
       let src =
         match speaker, emote with
@@ -408,11 +368,9 @@ let private makeSpeakerImage previous step =
   handler {
     // Don't fade out if it's the same image!
     let unchanged =
-      previous.speaker = step.speaker
-      && previous.emote = step.emote
+      previous.speaker = step.speaker && previous.emote = step.emote
 
-    let fadeOutStyle =
-      if unchanged then "hide" else "fade-out"
+    let fadeOutStyle = if unchanged then "hide" else "fade-out"
 
     let entryStyle =
       [ if not unchanged then yield "fade-in" else ()
@@ -423,8 +381,7 @@ let private makeSpeakerImage previous step =
 
     let! thisStepImg = stepToSpeakerImage entryStyle step
 
-    let! prevStepImg =
-      stepToSpeakerImage fadeOutStyle previous
+    let! prevStepImg = stepToSpeakerImage fadeOutStyle previous
 
     let speakerStyle =
       "position: fixed; height: 60%; min-width: 5000px; object-fit: contain; bottom: 0dvh; align-self: center;"
@@ -449,19 +406,24 @@ let private makeChoiceBox guid step =
 
   }
 
-let private makeMessageBox step =
-  let content = makeContentBox step
+let private makeMessageBox guid step =
+  handler {
+    let! token = Handler.getCsrfToken ()
+    let content = makeContentBox step
 
-  _div
-    [ _class_ "is-flex-grow-1" ]
-    [ _div
-        [ _class_ "container is-fluid" ]
-        [ _div
-            [ _class_ "box content has-text-centered mt-4"
-              _style_
-                "background-color: color-mix(in oklab, var(--bulma-box-background-color), transparent 10%)"
-              _id_ "content-story" ]
-            content ] ]
+    _div
+      [ yield _class_ "is-flex-grow-1"
+        yield _style_ "z-index: 150;"
+        yield! if step.choices.Length = 0 then playthroughHxAttrs guid token else [] ]
+      [ _div
+          [ _class_ "container is-fluid" ]
+          [ _div
+              [ _class_ "box content has-text-centered mt-4"
+                _style_
+                  "background-color: color-mix(in oklab, var(--bulma-box-background-color), transparent 10%); "
+                _id_ "content-story" ]
+              content ] ]
+  }
 
 let makeContinueOverlay guid step =
   handler {
@@ -476,10 +438,7 @@ let makeContinueOverlay guid step =
               "position: absolute; height: 100%; width: 100%; opacity: 0; z-index: 100;" ]
           []
       else
-        _div
-          [ _id_ "continue-overlay"
-            _style_ "display: none;" ]
-          []
+        _div [ _id_ "continue-overlay"; _style_ "display: none;" ] []
   }
 
 let makeBackgroundUnderlay step =
@@ -493,22 +452,17 @@ let makeBackgroundUnderlay step =
         | [| name; tag |] ->
           (match step.runAs with
            | RunAsWriter -> StoryAssets.findScene name
-           | RunAsAnonymous ->
-             StoryAssets.findSceneAs None name
-           | RunAsPublisher guid ->
-             StoryAssets.findSceneAs (Some guid) name)
+           | RunAsAnonymous -> StoryAssets.findSceneAs None name
+           | RunAsPublisher guid -> StoryAssets.findSceneAs (Some guid) name)
           |> Handler.map (
-            Option.bind (fun s ->
-              s.tags |> List.tryFind (fun t -> t.tag = tag))
+            Option.bind (fun s -> s.tags |> List.tryFind (fun t -> t.tag = tag))
           )
           |> Handler.map (Option.map (fun t -> t.url))
         | [| name |] ->
           (match step.runAs with
            | RunAsWriter -> StoryAssets.findScene name
-           | RunAsAnonymous ->
-             StoryAssets.findSceneAs None name
-           | RunAsPublisher guid ->
-             StoryAssets.findSceneAs (Some guid) name)
+           | RunAsAnonymous -> StoryAssets.findSceneAs None name
+           | RunAsPublisher guid -> StoryAssets.findSceneAs (Some guid) name)
           |> Handler.map (Option.map (fun s -> s.url))
         | _ -> Handler.return' None
       | None -> Handler.return' None
@@ -522,8 +476,7 @@ let makeBackgroundUnderlay step =
           + "'); background-size: cover; background-position: center; position: fixed;"
         )
       | None ->
-        _style_
-          "position: fixed; z-index: -1; height: 100dvh; width: 100vw;"
+        _style_ "position: fixed; z-index: -1; height: 100dvh; width: 100vw;"
 
     return
       _div
@@ -546,24 +499,20 @@ let private closeButton step =
       Hx.select "#page"
       Hx.targetCss "#page"
       Hx.get href
-      _style_
-        "position: absolute; top: 0; right: 0; z-index: 200;" ]
+      _style_ "position: absolute; top: 0; right: 0; z-index: 200;" ]
 
 let currentView template guid steps =
   handler {
     let! audio = makeAudio steps
 
-    let! speakerImage =
-      makeSpeakerImage steps.previousStep steps.currentStep
+    let! speakerImage = makeSpeakerImage steps.previousStep steps.currentStep
 
     let! choiceBox = makeChoiceBox guid steps.currentStep
-    let messageBox = makeMessageBox steps.currentStep
+    let! messageBox = makeMessageBox guid steps.currentStep
 
-    let! continueOverlay =
-      makeContinueOverlay guid steps.currentStep
+    let! continueOverlay = makeContinueOverlay guid steps.currentStep
 
-    let! backgroundUnderlay =
-      makeBackgroundUnderlay steps.currentStep
+    let! backgroundUnderlay = makeBackgroundUnderlay steps.currentStep
 
     return
       [ yield
@@ -594,8 +543,7 @@ let stepGet viewContext =
 
     let! html =
       currentView
-        (viewContext.skeletalTemplate
-          playthrough.steps.currentStep.gameTitle)
+        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
         id
         playthrough.steps
 
@@ -612,15 +560,13 @@ let stepPost viewContext =
     let! index =
       Handler.formDataOrFail
         (Response.withStatusCode 403 >> Response.ofEmpty)
-        (fun buttonData ->
-          buttonData.TryGetInt32 "choice" |> Some)
+        (fun buttonData -> buttonData.TryGetInt32 "choice" |> Some)
 
     let! step = cont id index
 
     let! html =
       currentView
-        (viewContext.skeletalTemplate
-          step.currentStep.gameTitle)
+        (viewContext.skeletalTemplate step.currentStep.gameTitle)
         id
         step
 
@@ -638,9 +584,7 @@ let startPost viewContext =
 
     let! script =
       Script.load scriptId
-      |> Handler.ofOption (
-        Response.withStatusCode 404 >> Response.ofEmpty
-      )
+      |> Handler.ofOption (Response.withStatusCode 404 >> Response.ofEmpty)
 
     let! id = start script RunAsWriter
 
@@ -648,14 +592,11 @@ let startPost viewContext =
 
     let! html =
       currentView
-        (viewContext.skeletalTemplate
-          playthrough.steps.currentStep.gameTitle)
+        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
         id
         playthrough.steps
 
-    return
-      Response.withHxPushUrl $"/playthrough/{id}"
-      >> Response.ofHtml html
+    return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> post "/playthrough/start"
@@ -667,32 +608,21 @@ let startPublishedGet viewContext =
 
     let! script =
       DocStore.singleShared<Script, _> (fun q ->
-        q
-          .Where(fun s -> s.id = Slug.toGuid slug)
-          .Where(fun s -> s.AnyTenant()))
-      |> Handler.ofOption (
-        Response.withStatusCode 404 >> Response.ofEmpty
-      )
+        q.Where(fun s -> s.id = Slug.toGuid slug).Where(fun s -> s.AnyTenant()))
+      |> Handler.ofOption (Response.withStatusCode 404 >> Response.ofEmpty)
 
     let! id =
-      start
-        script
-        (script.writerId
-         |> System.Guid.Parse
-         |> RunAsPublisher)
+      start script (script.writerId |> System.Guid.Parse |> RunAsPublisher)
 
     let! playthrough = load id
 
     let! html =
       currentView
-        (viewContext.skeletalTemplate
-          playthrough.steps.currentStep.gameTitle)
+        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
         id
         playthrough.steps
 
-    return
-      Response.withHxPushUrl $"/playthrough/{id}"
-      >> Response.ofHtml html
+    return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> get "/published/{slug}"
@@ -704,24 +634,17 @@ let startExampleGet viewContext =
     let! script = getExampleScript $"{filename}.ink"
 
     let! id =
-      start
-        script
-        (script.writerId
-         |> System.Guid.Parse
-         |> RunAsPublisher)
+      start script (script.writerId |> System.Guid.Parse |> RunAsPublisher)
 
     let! playthrough = load id
 
     let! html =
       currentView
-        (viewContext.skeletalTemplate
-          playthrough.steps.currentStep.gameTitle)
+        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
         id
         playthrough.steps
 
-    return
-      Response.withHxPushUrl $"/playthrough/{id}"
-      >> Response.ofHtml html
+    return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> get "/examples/{filename}"
@@ -742,14 +665,11 @@ let startPlaygroundPost viewContext =
 
     let! html =
       currentView
-        (viewContext.skeletalTemplate
-          playthrough.steps.currentStep.gameTitle)
+        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
         id
         playthrough.steps
 
-    return
-      Response.withHxPushUrl $"/playthrough/{id}"
-      >> Response.ofHtml html
+    return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> post "/playground/playthrough"
@@ -766,7 +686,4 @@ module Service =
   let addService: AddService =
     fun _ sc ->
       sc.ConfigureMarten(fun (storeOpts: StoreOptions) ->
-        storeOpts.Schema
-          .For<PlaythroughDocument>()
-          .MultiTenanted()
-        |> ignore)
+        storeOpts.Schema.For<PlaythroughDocument>().MultiTenanted() |> ignore)

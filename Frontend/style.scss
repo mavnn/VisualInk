@@ -48,7 +48,7 @@ html {
  * too big or small.
  */
 @media all and (min-width:1216px) { html { font-size: 22px; } }
-@media all and (max-width:768px) { html{ font-size: 18px; } }
+@media all and (max-width:640px) { html{ font-size: 12px; } }
 
 // #example-viewer {
 //     height: 15rem;
@@ -91,4 +91,20 @@ ink-element .cm-editor > .cm-gutters {
 dialog {
     border: none;
     background: none;
+}
+
+#choice-box {
+    max-height: 33dvh;
+    overflow-y: auto;
+}
+
+#content-story {
+    max-height: 33dvh;
+    overflow-y: auto;
+}
+
+.notification.choiceButton {
+    width: 100%;
+    margin: 0.33px;
+    padding: 0.33rem;
 }
