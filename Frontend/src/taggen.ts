@@ -1,16 +1,16 @@
-export type Element = {
+export type TaggenElement = {
   tag: string,
   attributes?: Record<string, string>,
   className?: string,
   handlers?: Parameters<HTMLElement["addEventListener"]>[]
-  children?: (Element | string)[]
+  children?: (TaggenElement | string)[]
 }
 
-const isElement = (input: string | Element): input is Element => {
+const isElement = (input: string | TaggenElement): input is TaggenElement => {
   return (input as any).tag != undefined
 }
 
-export const buildDom = (element: Element): HTMLElement => {
+export const buildDom = (element: TaggenElement): HTMLElement => {
   const domElement = document.createElement(element.tag)
   setAttributes(domElement, element.attributes ?? {})
   for(const handler of element.handlers ?? []) {

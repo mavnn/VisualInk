@@ -3,6 +3,7 @@ import { Update, receiveUpdates, sendableUpdates, collab, getSyncedVersion, reba
 import { EditorView, ViewPlugin, ViewUpdate, Tooltip, showTooltip, Panel, showPanel } from "@codemirror/view"
 import { EditorState, StateField, ChangeSet, Text, StateEffect } from "@codemirror/state"
 import htmx from 'htmx.org';
+import { buildDom, TaggenElement } from "./taggen";
 
 const _connection: signalR.HubConnection | null = null
 
@@ -40,269 +41,309 @@ export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token 
     }
   })
   function controlPanel(view: EditorView): Panel {
-    let dom = document.createElement("div")
-    dom.className = "buttons is-centered are-small mt-1 mb-1"
-
-    if (scriptId === null) {
-      let runButton = document.createElement("button")
-      setAttributes(runButton, {
-        id: "run-button",
-        disabled: "",
-        type: "button"
-      })
-      runButton.addEventListener(
-        "click",
-        () => {
-          const ink = view.state.doc.toString()
-          const title = view.state.field(titleField)
-          localStorage.setItem('ink', ink)
-          localStorage.setItem('title', title)
-
-          htmx.ajax('post', "/playground/playthrough", {
-            target: "#page",
-            select: "#page",
-            values: { ink },
-            headers: { [token.header]: token.value }
-          })
-        }
-      )
-      runButton.innerText = "Test your script"
-      runButton.className = "button is-primary"
-      dom.appendChild(runButton)
-    } else {
-      let runButton = document.createElement("button")
-      setAttributes(runButton, {
-        id: "run-button",
-        disabled: "",
-        type: "button"
-      })
-      runButton.addEventListener(
-        "click",
-        () => {
-          htmx.ajax('post', "/playthrough/start", {
-            target: "#page",
-            select: "#page",
-            values: { script: scriptId },
-            headers: { [token.header]: token.value }
-          })
-        }
-      )
-      runButton.innerText = "Run"
-      runButton.className = "button is-primary"
-      dom.appendChild(runButton)
-
-      if (publishedUrl === null) {
-        let publish = document.createElement("button")
-        setAttributes(publish, {
-          id: "publish",
+    let nonownerActions: TaggenElement[] =
+      [{
+        tag: "button",
+        attributes: {
+          id: "run-button",
+          disabled: "",
           type: "button"
-        })
-        publish.addEventListener(
-          "click",
-          () => {
-            htmx.ajax('post', "/script/publish", {
-              target: "#page",
-              select: "#page",
-              values: { publish: scriptId },
-              headers: { [token.header]: token.value }
-            })
-          }
-        )
-        publish.innerText = "Publish"
-        publish.className = "button is-danger"
-        dom.appendChild(publish)
-      } else {
-        let unpublish = document.createElement("button")
-        setAttributes(unpublish, {
-          id: "unpublish",
-          type: "button",
-        })
-        unpublish.addEventListener(
-          "click",
-          () => {
-            htmx.ajax('post', "/script/unpublish", {
-              target: "#page",
-              select: "#page",
-              values: { unpublish: scriptId },
-              headers: { [token.header]: token.value }
-            })
-          }
-        )
-        unpublish.innerText = "Unpublish"
-        unpublish.className = "button is-danger"
-        dom.appendChild(unpublish)
+        },
+        handlers:
+          [[
+
+            "click",
+            () => {
+              const ink = view.state.doc.toString()
+              const title = view.state.field(titleField)
+              localStorage.setItem('ink', ink)
+              localStorage.setItem('title', title)
+
+              htmx.ajax('post', "/playground/playthrough", {
+                target: "#page",
+                select: "#page",
+                values: { ink },
+                headers: { [token.header]: token.value }
+              })
+            }
+          ]]
+
+      }]
+    let ownerActions: TaggenElement[] = [
+      {
+        tag: "button",
+        attributes: {
+          id: "run-button",
+          disabled: "",
+          type: "button"
+        },
+        className: "button is-primary",
+        children: ["Run"],
+        handlers: [
+          [
+
+            "click",
+            () => {
+              htmx.ajax('post', "/playthrough/start", {
+                target: "#page",
+                select: "#page",
+                values: { script: scriptId },
+                headers: { [token.header]: token.value }
+              })
+            }
+          ]
+        ]
+      },
+      {
+        tag: "button",
+        attributes: {
+          id: publishedUrl ? "unpublish" : "publish",
+          type: "button"
+        },
+        className: "button is-danger",
+        children: [publishedUrl ? "Unpublish" : "Publish"],
+        handlers: [
+          [
+
+            "click",
+            () => {
+              htmx.ajax('post', `/script/${publishedUrl ? "unpublish" : "publish"}`, {
+                target: "#page",
+                select: "#page",
+                values: { [publishedUrl ? "unpublish" : "publish"]: scriptId },
+                headers: { [token.header]: token.value }
+              })
+            }
+          ]
+        ]
       }
+    ]
+    let dom: TaggenElement = {
+      tag: "div",
+      className: "buttons is-centered are-small mt-1 mb-1",
+      children: [
+        ...(scriptId === null ? nonownerActions : ownerActions),
+        {
+          tag: "button",
+          attributes: { type: "button" },
+          className: "button is-info",
+          children: ["Copy edit invite"],
+          handlers: [
+            [
+              "click",
+              async () => {
+                const type = "text/plain";
+                const text = `${document.location.origin}/script-collab/${collabGroupName}`
+                const clipboardItemData = {
+                  [type]: text,
+                };
+                const clipboardItem = new ClipboardItem(clipboardItemData);
+                await navigator.clipboard.write([clipboardItem]);
+              }
+            ]
+          ]
+
+        }
+      ]
     }
 
-    let liveInvite = document.createElement("button")
-    setAttributes(liveInvite, {
-      type: "button"
-    })
-    liveInvite.addEventListener("click",
-      async function getCollaborationLink() {
-        const type = "text/plain";
-        const text = `${document.location.origin}/script-collab/${collabGroupName}`
-        const clipboardItemData = {
-          [type]: text,
-        };
-        const clipboardItem = new ClipboardItem(clipboardItemData);
-        await navigator.clipboard.write([clipboardItem]);
-      })
-    liveInvite.className = "button is-info"
-    liveInvite.innerText = "Copy edit invite"
-    dom.appendChild(liveInvite)
-
     return {
-      dom
+      dom: buildDom(dom)
     }
 
   }
 
   function titlePanel(view: EditorView): Panel {
-    let dom = document.createElement("div")
-    dom.className = "field"
-    let titleControl = document.createElement("div")
-    titleControl.className = "control"
-    let titleInput = document.createElement("input")
-    let startingTitle = view.state.field(titleField)
-    setAttributes(titleInput, {
-      type: "text",
-      name: "title",
-      id: "story-title",
-      value: startingTitle
-    })
-    titleInput.className = "input"
-    titleInput.addEventListener("keyup", () => view.dispatch({ changes: [], effects: titleEffect.of(titleInput.value) }))
-    titleInput.addEventListener("blur", () => view.dispatch({ changes: [], effects: titleEffect.of(titleInput.value) }))
-    titleControl.appendChild(titleInput)
-    dom.appendChild(titleControl)
+    let dom: TaggenElement = {
+      tag: "div",
+      className: "field",
+      children: [
+        {
+          tag: "div",
+          className: "control",
+          children: [
+            {
+              tag: "input",
+              attributes: {
+                type: "text",
+                name: "title",
+                id: "story-title",
+                value: view.state.field(titleField)
+              },
+              className: "input",
+              handlers: [
+                ["keyup", (evt) => view.dispatch({ changes: [], effects: titleEffect.of((evt.target as HTMLInputElement).value) })],
+                ["blur", (evt) => view.dispatch({ changes: [], effects: titleEffect.of((evt.target as HTMLInputElement).value) })],
+              ]
+            }
+          ]
+        },
+        publishedUrl !== null ? {
+          tag: "p",
+          className: "help is-danger",
+          children: [
+            "Published at ",
+            { tag: "a", attributes: { href: publishedUrl }, children: [publishedUrl] }
+          ]
+        } : "",
+        {
+          tag: "div",
+          className: "mt-1 mb-1 buttons is-centered are-small",
+          children: [
+            {
+              tag: "button",
+              attributes: { type: "button" },
+              handlers: [["click", (event) => htmx.toggleClass(htmx.find(".cm-lineNumbers")!, "hideLineNumbers")]],
+              className: "button",
+              children: [
+                makeIcon("format-list-numbered"),
+                makeSpan("Toggle line numbers")
+              ]
+            },
+            {
+              tag: "button",
+              attributes: { type: "button" },
+              className: "button",
+              handlers: [[
+                "click",
+                () => (htmx.find("#speaker-chooser") as HTMLDialogElement).showModal()
+              ]],
+              children: [
+                makeIcon("account"),
+                makeSpan("Change speaker")
+              ]
+            },
+            {
+              tag: "button",
+              attributes: { type: "button" },
+              className: "button",
+              handlers: [[
+                "click",
+                () => (htmx.find("#scene-chooser") as HTMLDialogElement).showModal()
+              ]],
+              children: [
+                makeIcon("home"),
+                makeSpan("Change scene")
+              ]
+            },
+            {
+              tag: "button",
+              attributes: { type: "button" },
+              className: "button",
+              handlers: [[
+                "click",
+                () => (htmx.find("#music-chooser") as HTMLDialogElement).showModal()
+              ]],
+              children: [
+                makeIcon("music"),
+                makeSpan("Change music")
+              ]
+            },
+          ]
+        },
+        // speaker-chooser
+        {
+          tag: "dialog",
+          attributes: { closedby: "any", id: "speaker-chooser" },
+          children: [
+            {
+              tag: "div",
+              className: "box buttons",
+              children: [{ name: "Narrator", emotes: [] }, ...speakerInfo].map((speaker) => {
+                return {
+                  tag: "button",
+                  attributes: { type: "button" },
+                  className: "button",
+                  children: [speaker.name],
+                  handlers: [
+                    [
+                      "click",
+                      () => {
+                        const changes = view.state.changeByRange((range) => {
+                          const line = view.state.doc.lineAt(range.to)
+                          return { range, changes: [{ from: line.to, insert: `\n~speaker = "${speaker.name}"` }] }
+                        })
+                        view.dispatch(changes);
+                        (htmx.find("#speaker-chooser") as HTMLDialogElement).close()
+                      }
+                    ]
+                  ]
+                }
 
-    if (publishedUrl !== null) {
-      let publishedWarning = document.createElement("p")
-      let link = document.createElement("a")
-      setAttributes(link, {
-        href: publishedUrl
-      })
-      link.innerText = publishedUrl
-      publishedWarning.className = "help is-danger"
-      publishedWarning.append("Published at ")
-      publishedWarning.append(link)
-      dom.appendChild(publishedWarning)
+              })
+            }]
+        },
+        // scene-chooser
+        {
+          tag: "dialog",
+          attributes: { closedby: "any", id: "scene-chooser" },
+          children: [
+            {
+              tag: "div",
+              className: "box buttons",
+              children: sceneInfo.map((scene: { name: string }) => {
+                return {
+                  tag: "button",
+                  attributes: { type: "button" },
+                  className: "button",
+                  children: [scene.name],
+                  handlers: [
+                    [
+                      "click",
+                      () => {
+                        const changes = view.state.changeByRange((range) => {
+                          const line = view.state.doc.lineAt(range.to)
+                          return { range, changes: [{ from: line.to, insert: `\n~scene = "${scene.name}"` }] }
+                        })
+                        view.dispatch(changes);
+                        (htmx.find("#scene-chooser") as HTMLDialogElement).close()
+                      }
+                    ]
+                  ]
+                }
+              })
+            }]
+        },
+        // music-chooser
+        {
+          tag: "dialog",
+          attributes: { closedby: "any", id: "music-chooser" },
+          children: [
+            {
+              tag: "div",
+              className: "box buttons",
+              children: musicInfo.map((music: { name: string }) => {
+                return {
+                  tag: "button",
+                  attributes: { type: "button" },
+                  className: "button",
+                  children: [music.name],
+                  handlers: [
+                    [
+                      "click",
+                      () => {
+                        const changes = view.state.changeByRange((range) => {
+                          const line = view.state.doc.lineAt(range.to)
+                          return { range, changes: [{ from: line.to, insert: `\n~music = "${music.name}"` }] }
+                        })
+                        view.dispatch(changes);
+                        (htmx.find("#music-chooser") as HTMLDialogElement).close()
+                      }
+                    ]
+                  ]
+                }
+              })
+            }]
+        },
+      ]
     }
-
-    let helperButtons = document.createElement("div")
-    helperButtons.className = "mt-1 mb-1 buttons is-centered are-small"
-
-    let speakerChooser = document.createElement("dialog")
-    setAttributes(speakerChooser, { closedby: "any" })
-    let speakerChooserButtons = document.createElement("div")
-    speakerChooserButtons.className = "box buttons"
-    for (const speaker of [{name: "Narrator", emotes: [] }, ...speakerInfo]) {
-      let button = document.createElement("button")
-      setAttributes(button, { type: "button" })
-      button.className = "button"
-      button.innerText = speaker.name
-      button.addEventListener("click", () => {
-        const changes = view.state.changeByRange((range) => {
-          const line = view.state.doc.lineAt(range.to)
-          return { range, changes: [{ from: line.to, insert: `\n~speaker = "${speaker.name}"` }] }
-        })
-        view.dispatch(changes)
-        speakerChooser.close()
-      })
-      speakerChooserButtons.appendChild(button)
-    }
-    speakerChooser.appendChild(speakerChooserButtons)
-    dom.appendChild(speakerChooser)
-
-    let changeSpeaker = document.createElement("button")
-    setAttributes(changeSpeaker, { type: "button" })
-    changeSpeaker.className = "button"
-    changeSpeaker.addEventListener("click", () => {
-      speakerChooser.showModal()
-    })
-    changeSpeaker.appendChild(makeIcon("account"))
-    changeSpeaker.appendChild(makeSpan("Change speaker"))
-    helperButtons.appendChild(changeSpeaker)
-
-    let sceneChooser = document.createElement("dialog")
-    setAttributes(sceneChooser, { closedby: "any" })
-    let sceneChooserButtons = document.createElement("div")
-    sceneChooserButtons.className = "box buttons"
-    const makeSceneButton = (text: string) => {
-      let button = document.createElement("button")
-      setAttributes(button, { type: "button" })
-      button.className = "button"
-      button.innerText = text
-      button.addEventListener("click", () => {
-        const changes = view.state.changeByRange((range) => {
-          const line = view.state.doc.lineAt(range.to)
-          return { range, changes: [{ from: line.to, insert: `\n~scene = "${text}"` }] }
-        })
-        view.dispatch(changes)
-        sceneChooser.close()
-      })
-      sceneChooserButtons.appendChild(button)
-    }
-    for (const scene of sceneInfo) {
-      makeSceneButton(scene.name)
-      for (const tag of scene.tags) {
-        makeSceneButton(scene.name + " " + tag.tag)
-      }
-    }
-    sceneChooser.appendChild(sceneChooserButtons)
-    dom.appendChild(sceneChooser)
-
-    let changeScene = document.createElement("button")
-    setAttributes(changeScene, { type: "button" })
-    changeScene.className = "button"
-    changeScene.addEventListener("click", () => {
-      sceneChooser.showModal()
-    })
-    changeScene.appendChild(makeIcon("home"))
-    changeScene.appendChild(makeSpan("Change scene"))
-    helperButtons.appendChild(changeScene)
-
-    let musicChooser = document.createElement("dialog")
-    setAttributes(musicChooser, { closedby: "any" })
-    let musicChooserButtons = document.createElement("div")
-    musicChooserButtons.className = "box buttons"
-
-    for (const music of musicInfo) {
-      let button = document.createElement("button")
-      setAttributes(button, { type: "button" })
-      button.className = "button"
-      button.innerText = music.name
-      button.addEventListener("click", () => {
-        const changes = view.state.changeByRange((range) => {
-          const line = view.state.doc.lineAt(range.to)
-          return { range, changes: [{ from: line.to, insert: `\n~music = "${music.name}"` }] }
-        })
-        view.dispatch(changes)
-        musicChooser.close()
-      })
-      musicChooserButtons.appendChild(button)
-    }
-    musicChooser.appendChild(musicChooserButtons)
-    dom.appendChild(musicChooser)
-
-    let changeMusic = document.createElement("button")
-    setAttributes(changeMusic, { type: "button" })
-    changeMusic.className = "button"
-    changeMusic.addEventListener("click", () => {
-      musicChooser.showModal()
-    })
-    changeMusic.appendChild(makeIcon("music")) 
-    changeMusic.appendChild(makeSpan("Change music")) 
-    helperButtons.appendChild(changeMusic)
-
-    dom.appendChild(helperButtons)
 
     return {
-      dom,
+      dom: buildDom(dom),
       top: true,
       update: (update) => {
         const latestTitleChange = update.transactions.flatMap(t => t.effects).filter((e) => e.is(titleEffect)).slice(-1)[0]
+        const titleInput = htmx.find("#story-title") as HTMLInputElement
         if (latestTitleChange && latestTitleChange.value !== titleInput.value) {
           titleInput.value = latestTitleChange.value
         }
@@ -513,17 +554,19 @@ export const startCollabAuthority = (connection: signalR.HubConnection, groupNam
   })
 }
 
-const makeIcon = (name:string) => {
-  let span = document.createElement("span")
-  span.className = "icon"
-  let i = document.createElement("i")
-  i.className = "mdi mdi-" + name
-  span.appendChild(i)
-  return span
+const makeIcon = (name: string) => {
+  return {
+    tag: "span",
+    className: "icon",
+    children: [
+      { tag: "i", className: "mdi mdi-" + name }
+    ]
+  }
 }
 
 const makeSpan = (text: string) => {
-  let span = document.createElement("span")
-  span.innerText = text
-  return span
+  return {
+    tag: "span",
+    children: [text]
+  }
 }

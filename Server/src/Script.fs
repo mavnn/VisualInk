@@ -229,7 +229,7 @@ let editor input =
             match existing.publishedUrl with
             | Some url -> yield Attr.create "published-url" url
             | None -> () ]
-        [ _pre [] [ _text ink ] ]
+        [ _pre [_style_ "display: none;"] [ _text ink ] ]
 
   }
 

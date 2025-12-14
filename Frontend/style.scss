@@ -48,7 +48,7 @@ html {
  * too big or small.
  */
 @media all and (min-width:1216px) { html { font-size: 22px; } }
-@media all and (max-width:640px) { html{ font-size: 12px; } }
+@media all and (max-width:640px) { html{ font-size: 14px; } }
 
 // #example-viewer {
 //     height: 15rem;
@@ -107,4 +107,7 @@ dialog {
     width: 100%;
     margin: 0.33px;
     padding: 0.33rem;
+}
+.cm-lineNumbers.hideLineNumbers {
+    display: none !important;
 }
