@@ -168,7 +168,6 @@ const changeListener = (token: { header: string, value: string }) => EditorView.
     runButton?.setAttribute('disabled', "true");
   }
   if (!v.docChanged && hasTitleChange !== undefined) {
-    console.log("Calling linter for title change")
     callLinter(token)(v.view)
   }
 })

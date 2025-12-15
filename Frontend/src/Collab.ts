@@ -11,10 +11,6 @@ export let collabGroupName = ""
 
 export const getConnection = () => _connection === null ? new signalR.HubConnectionBuilder().withUrl("/collab").build() : _connection
 
-const setAttributes = (element: HTMLElement, attributes: Record<string, string>) => {
-  Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, value))
-}
-
 export const titleEffect = StateEffect.define<string>()
 
 export type ControlExtensionConfig = {
@@ -24,6 +20,56 @@ export type ControlExtensionConfig = {
   token: {
     header: string,
     value: string
+  }
+}
+
+const makeChooser = <T>(view: EditorView, input: { id: string, data: T[], map: (t: T) => { text: string, insert: string } }) => {
+  const close = {
+    tag: "button",
+    className: "delete is-small",
+    handlers: [
+      [
+        "click", () =>
+          (htmx.find(`#${input.id}`) as HTMLDialogElement).close()
+      ]]
+  }
+  const buttons =
+  {
+    tag: "div",
+    className: "buttons pr-4",
+    children:
+      input.data.map((d) => {
+        const { text, insert } = input.map(d)
+        return {
+          tag: "button",
+          attributes: { type: "button" },
+          className: "button",
+          children: [text],
+          handlers: [
+            [
+              "click",
+              () => {
+                const changes = view.state.changeByRange((range) => {
+                  const line = view.state.doc.lineAt(range.to)
+                  return { range, changes: [{ from: line.to, insert: insert }] }
+                })
+                view.dispatch(changes);
+                (htmx.find(`#${input.id}`) as HTMLDialogElement).close()
+              }
+            ]
+          ]
+        }
+      })
+  }
+  return {
+    tag: "dialog",
+    attributes: { closedby: "any", id: input.id },
+    children: [
+      {
+        tag: "div",
+        className: "notification",
+        children: [close, buttons]
+      }]
   }
 }
 
@@ -242,99 +288,22 @@ export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token 
           ]
         },
         // speaker-chooser
-        {
-          tag: "dialog",
-          attributes: { closedby: "any", id: "speaker-chooser" },
-          children: [
-            {
-              tag: "div",
-              className: "box buttons",
-              children: [{ name: "Narrator", emotes: [] }, ...speakerInfo].map((speaker) => {
-                return {
-                  tag: "button",
-                  attributes: { type: "button" },
-                  className: "button",
-                  children: [speaker.name],
-                  handlers: [
-                    [
-                      "click",
-                      () => {
-                        const changes = view.state.changeByRange((range) => {
-                          const line = view.state.doc.lineAt(range.to)
-                          return { range, changes: [{ from: line.to, insert: `\n~speaker = "${speaker.name}"` }] }
-                        })
-                        view.dispatch(changes);
-                        (htmx.find("#speaker-chooser") as HTMLDialogElement).close()
-                      }
-                    ]
-                  ]
-                }
-
-              })
-            }]
-        },
+        makeChooser(view, {
+          id: "speaker-chooser", data: [{ name: "Narrator", emotes: [] }, ...speakerInfo],
+          map: (speaker) => ({ text: speaker.name, insert: `\n~speaker = "${speaker.name}"` })
+        }),
         // scene-chooser
-        {
-          tag: "dialog",
-          attributes: { closedby: "any", id: "scene-chooser" },
-          children: [
-            {
-              tag: "div",
-              className: "box buttons",
-              children: sceneInfo.map((scene: { name: string }) => {
-                return {
-                  tag: "button",
-                  attributes: { type: "button" },
-                  className: "button",
-                  children: [scene.name],
-                  handlers: [
-                    [
-                      "click",
-                      () => {
-                        const changes = view.state.changeByRange((range) => {
-                          const line = view.state.doc.lineAt(range.to)
-                          return { range, changes: [{ from: line.to, insert: `\n~scene = "${scene.name}"` }] }
-                        })
-                        view.dispatch(changes);
-                        (htmx.find("#scene-chooser") as HTMLDialogElement).close()
-                      }
-                    ]
-                  ]
-                }
-              })
-            }]
-        },
+        makeChooser(view, {
+          id: "scene-chooser",
+          data: sceneInfo,
+          map: (scene: { name: string }) => ({ text: scene.name, insert: `\n~scene = "${scene.name}"` })
+        }),
         // music-chooser
-        {
-          tag: "dialog",
-          attributes: { closedby: "any", id: "music-chooser" },
-          children: [
-            {
-              tag: "div",
-              className: "box buttons",
-              children: musicInfo.map((music: { name: string }) => {
-                return {
-                  tag: "button",
-                  attributes: { type: "button" },
-                  className: "button",
-                  children: [music.name],
-                  handlers: [
-                    [
-                      "click",
-                      () => {
-                        const changes = view.state.changeByRange((range) => {
-                          const line = view.state.doc.lineAt(range.to)
-                          return { range, changes: [{ from: line.to, insert: `\n~music = "${music.name}"` }] }
-                        })
-                        view.dispatch(changes);
-                        (htmx.find("#music-chooser") as HTMLDialogElement).close()
-                      }
-                    ]
-                  ]
-                }
-              })
-            }]
-        },
+        makeChooser(view, {
+          id: "music-chooser",
+          data: musicInfo,
+          map: (music: { name: string }) => ({ text: music.name, insert: `\n~music = "${music.name}"` })
+        }),
       ]
     }
 
