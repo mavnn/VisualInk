@@ -48,12 +48,105 @@ type Steps =
     previousStep: Step }
 
 [<JsonFSharpConverter>]
-type PlaythroughDocument =
-  { id: System.Guid
-    state: string
-    script: Script
-    steps: Steps }
+type PlaythroughState =
+  { step: Step
+    saveState: string
+    previous: PlaythroughState option }
 
+[<JsonFSharpConverter>]
+[<CLIMutable>]
+type PlaythroughSave =
+  { Id: System.Guid
+    State: PlaythroughState
+    Script: Script }
+
+[<JsonFSharpConverter>]
+type PlayStart =
+  { script: Script
+    saveState: string
+    step: Step }
+
+[<JsonFSharpConverter>]
+type PlayForward = { saveState: string; step: Step }
+
+[<JsonFSharpConverter>]
+type PlaythroughEvent =
+  | PlayStart of PlayStart
+  | PlayBack
+  | PlayForward of PlayForward
+  | PlayFromSave of PlaythroughSave
+
+[<JsonFSharpConverter>]
+[<CLIMutable>]
+type Playthrough =
+  { Id: System.Guid
+    Script: Script
+    State: PlaythroughState
+    Version: int64 }
+
+  member x.Steps =
+    { currentStep = x.State.step
+      previousStep =
+        match x.State.previous with
+        | None -> x.State.step
+        | Some p -> p.step }
+
+module Projection =
+  open Marten.Events.Aggregation
+  open JasperFx.Events
+
+  type PlaythroughProjection() =
+    inherit SingleStreamProjection<Playthrough, System.Guid>()
+
+    member _.Create(playthroughEvent: IEvent<PlaythroughEvent>) : Playthrough =
+      match playthroughEvent.Data with
+      | PlayStart start ->
+        { Id = playthroughEvent.StreamId
+          Script = start.script
+          Version = playthroughEvent.Version
+          State =
+            { step = start.step
+              saveState = start.saveState
+              previous = None } }
+      | PlayFromSave save ->
+        { Id = playthroughEvent.StreamId
+          Script = save.Script
+          State = save.State
+          Version = playthroughEvent.Version }
+      // Should never be passed to create, something's gone wrong and it won't be recoverable
+      // with this stream ID
+      | _ ->
+        raise (
+          System.ArgumentException
+            "Cannot create a playthrough stream from a back or forward event"
+        )
+
+    member _.Apply
+      (playthroughEvent: PlaythroughEvent, ev: IEvent, playthrough: Playthrough)
+      : Playthrough =
+      match playthroughEvent with
+      | PlayStart _
+      | PlayFromSave _ ->
+        // These should never be added to an existing event stream, ignore
+        { playthrough with
+            Version = ev.Version }
+      | PlayBack ->
+        match playthrough.State.previous with
+        | None ->
+          // Can't go back beyond the first step, ignore
+          { playthrough with
+              Version = ev.Version }
+        | Some previous ->
+          { playthrough with
+              State = previous
+              Version = ev.Version }
+      | PlayForward forward ->
+        { playthrough with
+            Version = ev.Version
+            State =
+              { step = forward.step
+                saveState = forward.saveState
+                previous = Some playthrough.State } }
 
 let getStep previousStep (story: Ink.Runtime.Story) =
   handler {
@@ -111,7 +204,7 @@ let getStep previousStep (story: Ink.Runtime.Story) =
 
 let make script =
   handler {
-    let! logger = Handler.plug<ILogger<PlaythroughDocument>, _> ()
+    let! logger = Handler.plug<ILogger<Playthrough>, _> ()
 
     let story = Ink.Runtime.Story script.inkJson
     story.add_onError (fun msg t -> logger.LogError(msg, t))
@@ -133,8 +226,8 @@ let load (guid: System.Guid) =
 
     return!
       match user with
-      | Some _ -> DocStore.load<PlaythroughDocument, _, _> guid
-      | None -> DocStore.loadShared<PlaythroughDocument, _, _> guid
+      | Some _ -> DocStore.load<Playthrough, _, _> guid
+      | None -> DocStore.loadShared<Playthrough, _, _> guid
   }
   |> Handler.ofOption (Response.withStatusCode 404 >> Response.ofEmpty)
 
@@ -145,11 +238,11 @@ let private getRunnerSession () =
     | Some _ -> DocStore.startSession ()
     | None -> DocStore.startSharedSession ())
 
-let rec cont (guid: System.Guid) choice =
+let rec cont (guid: System.Guid) (expectedVersion: int64) choice =
   handler {
     let! doc = load guid
-    let! story = make doc.script
-    story.state.LoadJson doc.state
+    let! story = make doc.Script
+    story.state.LoadJson doc.State.saveState
 
     do
       match choice with
@@ -158,35 +251,45 @@ let rec cont (guid: System.Guid) choice =
 
     story.Continue() |> ignore
 
-    let previousStep = doc.steps.currentStep
+    let previousStep = doc.State.step
     let! currentStep = getStep previousStep story
 
-    let steps =
-      { currentStep = currentStep
-        previousStep = previousStep }
 
-    use! session = getRunnerSession ()
+    // Wrapped so we definitely close the session
+    // before calling `cont` recursively
+    let! appendAction =
+      handler {
+        use! session = getRunnerSession ()
 
-    session.Update
-      { doc with
-          state = story.state.ToJson()
-          steps = steps }
+        printfn "Expected version: %A" expectedVersion
 
-    do! DocStore.saveChanges session
+        let appendAction =
+          session.Events.Append(
+            doc.Id,
+            expectedVersion + 1L,
+            PlayForward
+              { step = currentStep
+                saveState = story.state.ToJson() }
+            |> box
+          )
+
+        do! DocStore.saveChanges session
+        return appendAction
+      }
+
     // Skip forwards if the returned step has no content at all
     // and there is no decision to make
     if
       currentStep.choices.Length = 0
       && System.String.IsNullOrWhiteSpace currentStep.text
     then
-      return! cont guid None
+      return! cont guid appendAction.Version None
     else
-      return steps
+      return! load guid
   }
 
 let private start script runAs =
   handler {
-    let guid = System.Guid.NewGuid()
     let! story = make script
 
     let state = story.state.ToJson()
@@ -208,30 +311,42 @@ let private start script runAs =
         stepCount = 0
         runAs = runAs }
 
-    use! session = getRunnerSession ()
+    let! streamAction =
+      handler {
+        use! session = getRunnerSession ()
 
-    session.Insert
-      { id = guid
-        script = script
-        state = state
-        steps =
-          { currentStep = step
-            previousStep = step } }
+        let streamAction =
+          session.Events.StartStream(
+            PlayStart
+              { script = script
+                saveState = state
+                step = step }
+          )
 
-    do! DocStore.saveChanges session
+        do! DocStore.saveChanges session
+        return streamAction
+      }
 
-    let! _ = cont guid None
+    let! _ = cont streamAction.Id streamAction.Version None
 
-    return guid
+    return streamAction.Id
   }
 
-let private nextLink guid = $"/playthrough/{guid.ToString()}"
+let private nextLink guid expectedVersion =
+  $"/playthrough/{guid.ToString()}/{expectedVersion.ToString()}"
 
-let private playthroughHxAttrs guid (token: AntiforgeryTokenSet) =
-  [ Hx.post (nextLink guid)
+let private backLink guid expectedVersion =
+  $"/playthrough/{guid.ToString()}/{expectedVersion.ToString()}/back"
+
+let private playthroughHxAttrs
+  guid
+  expectedVersion
+  (token: AntiforgeryTokenSet)
+  =
+  [ Hx.post (nextLink guid expectedVersion)
     Hx.headers [ token.HeaderName, token.RequestToken ] ]
 
-let private makeChoiceMenu guid step token =
+let private makeChoiceMenu guid expectedVersion step token =
   let choices =
     match step.finished, step.choices.Length with
     | false, 0 -> []
@@ -239,7 +354,7 @@ let private makeChoiceMenu guid step token =
       step.choices
       |> Seq.map (fun c ->
         _button
-          [ yield! playthroughHxAttrs guid token
+          [ yield! playthroughHxAttrs guid expectedVersion token
             _value_ (c.index.ToString())
             _name_ "choice"
             _class_ "notification is-link choiceButton" ]
@@ -364,24 +479,25 @@ let private stepToSpeakerImage animation step =
             _style_ speakerStyle ]
     }
 
-let private makeSpeakerImage previous step =
+let private makeSpeakerImage steps =
   handler {
     // Don't fade out if it's the same image!
     let unchanged =
-      previous.speaker = step.speaker && previous.emote = step.emote
+      steps.previousStep.speaker = steps.currentStep.speaker
+      && steps.previousStep.emote = steps.currentStep.emote
 
     let fadeOutStyle = if unchanged then "hide" else "fade-out"
 
     let entryStyle =
       [ if not unchanged then yield "fade-in" else ()
-        match step.animation with
+        match steps.currentStep.animation with
         | Some a -> yield a
         | None -> () ]
       |> String.concat " "
 
-    let! thisStepImg = stepToSpeakerImage entryStyle step
+    let! thisStepImg = stepToSpeakerImage entryStyle steps.currentStep
 
-    let! prevStepImg = stepToSpeakerImage fadeOutStyle previous
+    let! prevStepImg = stepToSpeakerImage fadeOutStyle steps.previousStep
 
     let speakerStyle =
       "position: fixed; height: 60%; min-width: 5000px; object-fit: contain; bottom: 0dvh; align-self: center;"
@@ -392,10 +508,10 @@ let private makeSpeakerImage previous step =
           [ thisStepImg; prevStepImg ] ]
   }
 
-let private makeChoiceBox guid step =
+let private makeChoiceBox guid expectedVersion step =
   handler {
     let! token = Handler.getCsrfToken ()
-    let choiceMenu = makeChoiceMenu guid step token
+    let choiceMenu = makeChoiceMenu guid expectedVersion step token
 
     return
       _div
@@ -406,7 +522,7 @@ let private makeChoiceBox guid step =
 
   }
 
-let private makeMessageBox guid step =
+let private makeMessageBox guid expectedVersion step =
   handler {
     let! token = Handler.getCsrfToken ()
     let content = makeContentBox step
@@ -414,10 +530,25 @@ let private makeMessageBox guid step =
     _div
       [ yield _class_ "is-flex-grow-1"
         yield _style_ "z-index: 150;"
-        yield! if step.choices.Length = 0 then playthroughHxAttrs guid token else [] ]
+        yield!
+          if step.choices.Length = 0 then
+            playthroughHxAttrs guid expectedVersion token
+          else
+            [] ]
       [ _div
           [ _class_ "container is-fluid" ]
           [ _div
+              [ _class_ "buttons is-centered are-small m-1" ]
+              [ B.button
+                  [ Hx.post "/playthrough/save"
+                    Hx.headers [ token.HeaderName, token.RequestToken ]
+                    Hx.targetCss "#hero-story"
+                    Hx.select "#hero-story"
+                    HxMorph.morphOuterHtml
+                    _name_ "playthrough"
+                    _value_ (guid.ToString()) ]
+                  [ _text "Save" ] ]
+            _div
               [ _class_ "box content has-text-centered mt-4"
                 _style_
                   "background-color: color-mix(in oklab, var(--bulma-box-background-color), transparent 10%); "
@@ -425,14 +556,14 @@ let private makeMessageBox guid step =
               content ] ]
   }
 
-let makeContinueOverlay guid step =
+let makeContinueOverlay guid expectedVersion step =
   handler {
     let! token = Handler.getCsrfToken ()
 
     return
       if not step.finished && step.choices.Length = 0 then
         _div
-          [ yield! playthroughHxAttrs guid token
+          [ yield! playthroughHxAttrs guid expectedVersion token
             _id_ "continue-overlay"
             _style_
               "position: absolute; height: 100%; width: 100%; opacity: 0; z-index: 100;" ]
@@ -501,18 +632,37 @@ let private closeButton step =
       Hx.get href
       _style_ "position: absolute; top: 0; right: 0; z-index: 200;" ]
 
-let currentView template guid steps =
+let private backButton guid expectedVersion =
+  let href = backLink guid expectedVersion
+
+  _div
+    [ Hx.swapOuterHtml
+      Hx.targetCss "#hero-story"
+      Hx.post href
+      _style_ "position: absolute; top: 0; left: 0; z-index: 200;" ]
+    [ B.icon
+        "arrow-left-circle"
+        [ _class_ "m-2 is-medium"; _style_ "font-size: 1.8rem;" ] ]
+
+let currentView template (playthrough: Playthrough) =
   handler {
-    let! audio = makeAudio steps
+    let! audio = makeAudio playthrough.Steps
 
-    let! speakerImage = makeSpeakerImage steps.previousStep steps.currentStep
+    let! speakerImage = makeSpeakerImage playthrough.Steps
 
-    let! choiceBox = makeChoiceBox guid steps.currentStep
-    let! messageBox = makeMessageBox guid steps.currentStep
+    let! choiceBox =
+      makeChoiceBox playthrough.Id playthrough.Version playthrough.State.step
 
-    let! continueOverlay = makeContinueOverlay guid steps.currentStep
+    let! messageBox =
+      makeMessageBox playthrough.Id playthrough.Version playthrough.State.step
 
-    let! backgroundUnderlay = makeBackgroundUnderlay steps.currentStep
+    let! continueOverlay =
+      makeContinueOverlay
+        playthrough.Id
+        playthrough.Version
+        playthrough.State.step
+
+    let! backgroundUnderlay = makeBackgroundUnderlay playthrough.State.step
 
     return
       [ yield
@@ -525,14 +675,14 @@ let currentView template guid steps =
               HxMorph.morphOuterHtml ]
             [ yield! audio
               yield! speakerImage
-              closeButton steps.currentStep
+              closeButton playthrough.State.step
+              backButton playthrough.Id playthrough.Version
               continueOverlay
               backgroundUnderlay
               messageBox
               choiceBox ] ]
-      |> template
+      |> template playthrough.State.step.gameTitle
   }
-
 
 let stepGet viewContext =
   handler {
@@ -541,11 +691,7 @@ let stepGet viewContext =
 
     let! playthrough = load id
 
-    let! html =
-      currentView
-        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
-        id
-        playthrough.steps
+    let! html = currentView viewContext.skeletalTemplate playthrough
 
     return! HxFragment "hero-story" html
   }
@@ -556,24 +702,43 @@ let stepPost viewContext =
   handler {
     let! requestData = Handler.fromCtx Request.getRoute
     let id = requestData.GetGuid "guid"
+    let expectedVersion = requestData.GetInt64 "expectedVersion"
 
     let! index =
       Handler.formDataOrFail
         (Response.withStatusCode 403 >> Response.ofEmpty)
         (fun buttonData -> buttonData.TryGetInt32 "choice" |> Some)
 
-    let! step = cont id index
+    let! playthrough = cont id expectedVersion index
 
-    let! html =
-      currentView
-        (viewContext.skeletalTemplate step.currentStep.gameTitle)
-        id
-        step
+    let! html = currentView viewContext.skeletalTemplate playthrough
 
     return! HxFragment "hero-story" html
   }
   |> Handler.flatten
-  |> post "playthrough/{guid:guid}"
+  |> post "playthrough/{guid:guid}/{expectedVersion}"
+
+let stepBackPost viewContext =
+  handler {
+    let! requestData = Handler.fromCtx Request.getRoute
+    let guid = requestData.GetGuid "guid"
+    let expectedVersion = requestData.GetInt64 "expectedVersion"
+
+    use! session = getRunnerSession ()
+
+    let streamEvent =
+      session.Events.Append(guid, expectedVersion + 1L, PlayBack |> box)
+
+    do! DocStore.saveChanges session
+
+    let! playthrough = load guid
+
+    let! html = currentView viewContext.skeletalTemplate playthrough
+
+    return! HxFragment "hero-story" html
+  }
+  |> Handler.flatten
+  |> post "playthrough/{guid:guid}/{expectedVersion}/back"
 
 let startPost viewContext =
   handler {
@@ -590,16 +755,53 @@ let startPost viewContext =
 
     let! playthrough = load id
 
-    let! html =
-      currentView
-        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
-        id
-        playthrough.steps
+    let! html = currentView viewContext.skeletalTemplate playthrough
 
-    return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
+    return
+      Response.withHxPushUrl $"/playthrough/{id}"
+      >> Response.ofHtml html
   }
   |> Handler.flatten
   |> post "/playthrough/start"
+
+let savePost viewContext =
+  handler {
+    let! requestData =
+      Handler.formDataOrFail
+        (Response.withStatusCode 400 >> Response.ofEmpty)
+        (fun requestData ->
+          Option.map2
+            (fun playthrough name ->
+              {| playthrough = playthrough
+                 name = name |})
+            (requestData.TryGetGuid "playthrough")
+            (requestData.TryGetStringNonEmpty "name"
+             |> fun n ->
+               match n with
+               | Some n -> Some n
+               | None -> Some "Unnamed save"))
+
+    let! playthrough = load requestData.playthrough
+
+    let save =
+      { Id = System.Guid.NewGuid()
+        State = playthrough.State
+        Script = playthrough.Script }
+
+    use! session = DocStore.startSession ()
+    session.Insert save
+    do! DocStore.saveChanges session
+
+    let! html = currentView viewContext.skeletalTemplate playthrough
+
+    return
+      Response.withHxPushUrl
+        $"/playthrough/{requestData.playthrough}"
+      >> Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> post "/playthrough/save"
+
 
 let startPublishedGet viewContext =
   handler {
@@ -616,11 +818,7 @@ let startPublishedGet viewContext =
 
     let! playthrough = load id
 
-    let! html =
-      currentView
-        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
-        id
-        playthrough.steps
+    let! html = currentView viewContext.skeletalTemplate playthrough
 
     return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
@@ -638,11 +836,7 @@ let startExampleGet viewContext =
 
     let! playthrough = load id
 
-    let! html =
-      currentView
-        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
-        id
-        playthrough.steps
+    let! html = currentView viewContext.skeletalTemplate playthrough
 
     return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
@@ -663,11 +857,7 @@ let startPlaygroundPost viewContext =
 
     let! playthrough = load id
 
-    let! html =
-      currentView
-        (viewContext.skeletalTemplate playthrough.steps.currentStep.gameTitle)
-        id
-        playthrough.steps
+    let! html = currentView viewContext.skeletalTemplate playthrough
 
     return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
@@ -675,9 +865,13 @@ let startPlaygroundPost viewContext =
   |> post "/playground/playthrough"
 
 module Service =
+  open JasperFx.Events.Projections
+
   let endpoints viewContext =
     [ stepGet viewContext
       stepPost viewContext
+      stepBackPost viewContext
+      savePost viewContext
       startPost viewContext
       startPublishedGet viewContext
       startExampleGet viewContext
@@ -686,4 +880,8 @@ module Service =
   let addService: AddService =
     fun _ sc ->
       sc.ConfigureMarten(fun (storeOpts: StoreOptions) ->
-        storeOpts.Schema.For<PlaythroughDocument>().MultiTenanted() |> ignore)
+        storeOpts.Schema.For<PlaythroughSave>().MultiTenanted() |> ignore
+
+        storeOpts.Projections.Add<Projection.PlaythroughProjection>
+          ProjectionLifecycle.Inline
+        |> ignore)
