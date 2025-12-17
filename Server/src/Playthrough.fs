@@ -53,12 +53,13 @@ type PlaythroughState =
     saveState: string
     previous: PlaythroughState option }
 
-[<JsonFSharpConverter>]
+[<JsonFSharpConverter(SkippableOptionFields = SkippableOptionFields.Always)>]
 [<CLIMutable>]
 type PlaythroughSave =
   { Id: System.Guid
     State: PlaythroughState
-    Script: Script }
+    Script: Script
+    mutable LastModified: System.DateTimeOffset }
 
 [<JsonFSharpConverter>]
 type PlayStart =
@@ -381,14 +382,16 @@ let private makeChoiceMenu guid expectedVersion step token =
     [ _div [ _class_ "buttons mb-5"; _style_ "width: 100%;" ] choices ]
 
 let private makeContentBox step =
-  [ match step.speaker with
-    | Some c ->
-      yield
-        _h3
-          [ _class_ "subtitle has-text-primary fade"; _id_ "character-name" ]
-          [ _textEnc $"{c}:" ]
-    | None -> ()
-    yield _p [ _id_ "speech"; _class_ "fade" ] [ _textEnc step.text ] ]
+  match step.speaker with
+  | Some name ->
+    [ _p
+        [ _id_ "speech"; _class_ "fade" ]
+        [ _span
+            [ _class_ "has-text-weight-bold has-text-primary" ]
+            [ _textEnc $"{name}: " ]
+          _span [ _class_ "dialogue" ] [ _textEnc (step.text.Trim()) ] ] ]
+  | None ->
+    [ _p [ _id_ "speech"; _class_ "fade" ] [ _textEnc (step.text.Trim()) ] ]
 
 let private makeAudio steps =
   handler {
@@ -526,34 +529,58 @@ let private makeMessageBox guid expectedVersion step =
   handler {
     let! token = Handler.getCsrfToken ()
     let content = makeContentBox step
+    let! user = User.getSessionUser ()
+
+    let quitLink =
+      match step.runAs with
+      | RunAsPublisher _ -> "/"
+      | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
+      | RunAsAnonymous -> "/script/demo"
+
+    let backLink = backLink guid expectedVersion
 
     _div
-      [ yield _class_ "is-flex-grow-1"
-        yield _style_ "z-index: 150;"
-        yield!
-          if step.choices.Length = 0 then
-            playthroughHxAttrs guid expectedVersion token
-          else
-            [] ]
+      [ yield _class_ "is-flex-grow-1"; yield _style_ "z-index: 150;" ]
       [ _div
-          [ _class_ "container is-fluid" ]
+          [ _class_ "container is-fluid"; _style_ "height: 100%;" ]
           [ _div
-              [ _class_ "buttons is-centered are-small m-1" ]
+              [ _class_ "buttons is-centered are-small m-1 has-addons" ]
               [ B.button
-                  [ Hx.post "/playthrough/save"
-                    Hx.headers [ token.HeaderName, token.RequestToken ]
+                  [ Hx.swapOuterHtml
                     Hx.targetCss "#hero-story"
-                    Hx.select "#hero-story"
-                    HxMorph.morphOuterHtml
-                    _name_ "playthrough"
-                    _value_ (guid.ToString()) ]
-                  [ _text "Save" ] ]
+                    Hx.headers [ token.HeaderName, token.RequestToken ]
+                    Hx.post backLink
+                    _type_ "button" ]
+                  [ B.icon "arrow-left-bold" []; _span' "Back" ]
+                if Option.isSome user then
+                  B.button
+                    [ Hx.post "/playthrough/save"
+                      Hx.headers [ token.HeaderName, token.RequestToken ]
+                      Hx.targetCss "#hero-story"
+                      Hx.select "#hero-story"
+                      HxMorph.morphOuterHtml
+                      _name_ "playthrough"
+                      _value_ (guid.ToString())
+                      _type_ "button" ]
+                    [ B.icon "content-save" []; _span' "Save" ]
+                B.button
+                  [ Hx.swapOuterHtml
+                    Hx.select "#page"
+                    Hx.targetCss "#page"
+                    Hx.get quitLink ]
+                  [ B.icon "close" []; _span' "Quit" ] ]
             _div
-              [ _class_ "box content has-text-centered mt-4"
-                _style_
-                  "background-color: color-mix(in oklab, var(--bulma-box-background-color), transparent 10%); "
-                _id_ "content-story" ]
-              content ] ]
+              (if step.choices.Length = 0 then
+                 _style_ "height: 100%;"
+                 :: playthroughHxAttrs guid expectedVersion token
+               else
+                 [])
+              [ _div
+                  [ _class_ "box content has-text-centered"
+                    _style_
+                      "background-color: color-mix(in oklab, var(--bulma-box-background-color), transparent 10%); "
+                    _id_ "content-story" ]
+                  content ] ] ]
   }
 
 let makeContinueOverlay guid expectedVersion step =
@@ -617,33 +644,6 @@ let makeBackgroundUnderlay step =
         []
   }
 
-let private closeButton step =
-  let href =
-    match step.runAs with
-    | RunAsPublisher _ -> "/"
-    | RunAsWriter -> $"/script/{step.scriptId.ToString()}"
-    | RunAsAnonymous -> "/script/demo"
-
-  B.delete
-    [ _class_ "m-2 is-medium"
-      Hx.swapOuterHtml
-      Hx.select "#page"
-      Hx.targetCss "#page"
-      Hx.get href
-      _style_ "position: absolute; top: 0; right: 0; z-index: 200;" ]
-
-let private backButton guid expectedVersion =
-  let href = backLink guid expectedVersion
-
-  _div
-    [ Hx.swapOuterHtml
-      Hx.targetCss "#hero-story"
-      Hx.post href
-      _style_ "position: absolute; top: 0; left: 0; z-index: 200;" ]
-    [ B.icon
-        "arrow-left-circle"
-        [ _class_ "m-2 is-medium"; _style_ "font-size: 1.8rem;" ] ]
-
 let currentView template (playthrough: Playthrough) =
   handler {
     let! audio = makeAudio playthrough.Steps
@@ -675,8 +675,6 @@ let currentView template (playthrough: Playthrough) =
               HxMorph.morphOuterHtml ]
             [ yield! audio
               yield! speakerImage
-              closeButton playthrough.State.step
-              backButton playthrough.Id playthrough.Version
               continueOverlay
               backgroundUnderlay
               messageBox
@@ -757,9 +755,7 @@ let startPost viewContext =
 
     let! html = currentView viewContext.skeletalTemplate playthrough
 
-    return
-      Response.withHxPushUrl $"/playthrough/{id}"
-      >> Response.ofHtml html
+    return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
   }
   |> Handler.flatten
   |> post "/playthrough/start"
@@ -786,7 +782,8 @@ let savePost viewContext =
     let save =
       { Id = System.Guid.NewGuid()
         State = playthrough.State
-        Script = playthrough.Script }
+        Script = playthrough.Script
+        LastModified = System.DateTimeOffset.UtcNow }
 
     use! session = DocStore.startSession ()
     session.Insert save
@@ -795,8 +792,7 @@ let savePost viewContext =
     let! html = currentView viewContext.skeletalTemplate playthrough
 
     return
-      Response.withHxPushUrl
-        $"/playthrough/{requestData.playthrough}"
+      Response.withHxPushUrl $"/playthrough/{requestData.playthrough}"
       >> Response.ofHtml html
   }
   |> Handler.flatten
@@ -852,7 +848,6 @@ let startPlaygroundPost viewContext =
 
     let! script = makePlaygroundScript ink
 
-
     let! id = start script RunAsAnonymous
 
     let! playthrough = load id
@@ -864,6 +859,126 @@ let startPlaygroundPost viewContext =
   |> Handler.flatten
   |> post "/playground/playthrough"
 
+let private resumePlaythroughPost viewContext =
+  handler {
+    let! saveId =
+      Handler.formDataOrFail
+        (Response.withStatusCode 400 >> Response.ofEmpty)
+        (fun fd -> fd.TryGetGuid "save")
+
+    let! save =
+      DocStore.load<PlaythroughSave, _, _> saveId
+      |> Handler.ofOption (Response.withStatusCode 400 >> Response.ofEmpty)
+
+    let! session = DocStore.startSession ()
+    let action = session.Events.StartStream(PlayFromSave save)
+    do! DocStore.saveChanges session
+
+    let! playthrough = load action.Id
+
+    let! html = currentView viewContext.skeletalTemplate playthrough
+
+    return Response.withHxPushUrl $"/playthrough/{id}" >> Response.ofHtml html
+  }
+  |> Handler.flatten
+  |> post "/playthrough/resume"
+
+let private listSaves viewContext =
+  handler {
+    let! saves =
+      DocStore.query<PlaythroughSave> (fun q ->
+        q.OrderBySql "mt_last_modified desc")
+
+    let! token = Handler.getCsrfToken ()
+
+    let content =
+      [ B.title [] "Saved playthroughs"
+        _table
+          [ _class_ "table" ]
+          [ _thead
+              []
+              [ _tr
+                  []
+                  [ _th [] [ _text "Saved" ]
+                    _th [] [ _text "Title" ]
+                    _th [] [ _text "Turns" ]
+                    _th [] [ _text "Resume?" ]
+                    _th [] [ _text "Delete" ] ]
+                yield!
+                  saves
+                  |> List.map (fun save ->
+                    _tr
+                      []
+                      [ _td [] [ _text (save.LastModified.ToString "u") ]
+                        _td [] [ _textEnc save.Script.title ]
+                        _td
+                          []
+                          [ _textEnc (save.State.step.stepCount.ToString()) ]
+                        _td
+                          []
+                          [ B.button
+                              [ Hx.post "/playthrough/resume"
+                                Hx.headers
+                                  [ token.HeaderName, token.RequestToken ]
+                                Hx.targetCss "#page"
+                                Hx.select "#page"
+                                _class_ "is-small is-primary"
+                                _value_ (save.Id.ToString())
+                                _name_ "save" ]
+                              [ _text "Resume" ] ]
+                        _td
+                          []
+                          [ B.button
+                              [ Hx.delete $"/playthrough/save/{save.Id}"
+                                Hx.headers
+                                  [ token.HeaderName, token.RequestToken ]
+                                Hx.targetCss "#page"
+                                Hx.select "#page"
+                                _class_ "is-small is-danger"
+                                _value_ (save.Id.ToString())
+                                _name_ "save" ]
+                              [ _text "Delete" ] ] ]) ] ] ]
+
+    let! template = viewContext.contextualTemplate
+    let html = template "Saves" content
+    return Response.ofHtml html
+
+  }
+
+let private savesGet viewContext =
+  listSaves viewContext |> Handler.flatten |> get "/playthrough/saves"
+
+let private savesDelete viewContext =
+  handler {
+    use! session = DocStore.startSession ()
+    let! routeData = Handler.fromCtx Request.getRoute
+    let saveId = routeData.GetGuid "saveId"
+    session.Delete<PlaythroughSave> saveId
+    do! DocStore.saveChanges session
+    return! listSaves viewContext
+  }
+  |> Handler.flatten
+  |> delete "/playthrough/save/{saveId:guid}"
+
+let nav =
+  handler {
+    let! maybeUser = User.getSessionUser ()
+
+    match maybeUser with
+    | Some _ ->
+      use! session = DocStore.startSession ()
+      let count = session.Query<PlaythroughSave>().Count()
+
+      if count > 0 then
+        return
+          _a
+            [ _class_ "navbar-item"; _href_ "/playthrough/saves" ]
+            [ _text "Saves" ]
+      else
+        return _text ""
+    | None -> return _text ""
+  }
+
 module Service =
   open JasperFx.Events.Projections
 
@@ -872,6 +987,9 @@ module Service =
       stepPost viewContext
       stepBackPost viewContext
       savePost viewContext
+      savesGet viewContext
+      savesDelete viewContext
+      resumePlaythroughPost viewContext
       startPost viewContext
       startPublishedGet viewContext
       startExampleGet viewContext
@@ -880,7 +998,11 @@ module Service =
   let addService: AddService =
     fun _ sc ->
       sc.ConfigureMarten(fun (storeOpts: StoreOptions) ->
-        storeOpts.Schema.For<PlaythroughSave>().MultiTenanted() |> ignore
+        storeOpts.Schema
+          .For<PlaythroughSave>()
+          .MultiTenanted()
+          .Metadata(fun m -> m.LastModified.MapTo(fun x -> x.LastModified))
+        |> ignore
 
         storeOpts.Projections.Add<Projection.PlaythroughProjection>
           ProjectionLifecycle.Inline

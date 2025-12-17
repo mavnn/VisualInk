@@ -45,8 +45,7 @@ type ScriptFileHandler(docStore: IDocumentStore, userService: User.IUserService)
 
     member _.LoadInkFileContents(fullFilename: string) : string =
       match isPluginInclude fullFilename with
-      | Some pluginInput ->
-        generatePluginInclude pluginInput
+      | Some pluginInput -> generatePluginInclude pluginInput
       | None ->
         let userId = userService.GetUserId()
 
@@ -76,7 +75,8 @@ let private makeCompiler ink title (errors: ErrorList) fileHandler =
       sourceFilename = title,
       errorHandler = errorHandler,
       fileHandler = fileHandler,
-      plugins = System.Collections.Generic.List [VisualInkPlugin() :> Ink.IPlugin]
+      plugins =
+        System.Collections.Generic.List [ VisualInkPlugin() :> Ink.IPlugin ]
     )
   )
 
@@ -229,7 +229,7 @@ let editor input =
             match existing.publishedUrl with
             | Some url -> yield Attr.create "published-url" url
             | None -> () ]
-        [ _pre [_style_ "display: none;"] [ _text ink ] ]
+        [ _pre [ _style_ "display: none;" ] [ _text ink ] ]
 
   }
 
@@ -243,23 +243,17 @@ let scriptManager (editorInput: EditorInput) =
 
     let! music = StoryAssets.findAllMusic ()
 
-    let speakerJson = _div [_id_ "speaker-json"; _hidden_] [
-       _text (serializeJson speakers)
-    ]
+    let speakerJson =
+      _div [ _id_ "speaker-json"; _hidden_ ] [ _text (serializeJson speakers) ]
 
-    let musicJson = _div [_id_ "music-json"; _hidden_ ] [
-       _text (serializeJson music)
-    ]
+    let musicJson =
+      _div [ _id_ "music-json"; _hidden_ ] [ _text (serializeJson music) ]
 
-    let sceneJson = _div [_id_ "scene-json"; _hidden_ ] [
-       _text (serializeJson scenes)
-    ]
+    let sceneJson =
+      _div [ _id_ "scene-json"; _hidden_ ] [ _text (serializeJson scenes) ]
 
     return
-      [ _div [ _id_ "editor" ] [ form ]
-        speakerJson
-        musicJson
-        sceneJson ]
+      [ _div [ _id_ "editor" ] [ form ]; speakerJson; musicJson; sceneJson ]
   }
 
 let createGet viewContext =
@@ -629,10 +623,18 @@ let private inkToResponse title (error: string, t: Ink.ErrorType) =
 
 type AutocompleteContent =
   { lists: string list
+    divertTargets: string list
     globalVariables: string list }
 
 let private getAutocompleteContext (story: Ink.Parsed.Story) =
   story.ResolveWeavePointNaming()
+
+  let divertTargets =
+    story.FindAll<Ink.Parsed.FlowBase>()
+    |> Seq.filter (fun flow -> flow.name <> null)
+    |> Seq.map (fun flow -> flow.name)
+    |> List.ofSeq
+
   let globalVariables =
     story.FindAll<Ink.Parsed.VariableAssignment>()
     |> Seq.map (fun v -> v.variableName)
@@ -645,7 +647,14 @@ let private getAutocompleteContext (story: Ink.Parsed.Story) =
   // |> Set.ofSeq
   // |> printfn "%A"
 
-  { lists = []; globalVariables = globalVariables }
+  { lists = []
+    globalVariables = globalVariables
+    divertTargets = "DONE"::"END"::divertTargets }
+
+[<JsonFSharpConverter(SkippableOptionFields = SkippableOptionFields.Always)>]
+type LintResponse =
+  { lines: LintResponseItem seq
+    autocompleteContext: AutocompleteContent option }
 
 let lintPost =
   handler {
@@ -669,7 +678,6 @@ let lintPost =
     let autocompleteContext =
       compileResult.completed
       |> Option.map (fun { parsed = parsed } -> getAutocompleteContext parsed)
-      |> Option.defaultValue { lists = []; globalVariables = ["speaker";"scene";"music"]}
 
     if referrer.Length > 36 then
       match
@@ -692,7 +700,10 @@ let lintPost =
     else
       do ()
 
-    return Response.ofJson {|lines = lines; autocompleteContext = autocompleteContext |}
+    return
+      Response.ofJson
+        { lines = lines
+          autocompleteContext = autocompleteContext }
   }
   |> Handler.flatten
   |> post "/script/lint"
@@ -762,23 +773,34 @@ let getExampleScript filename =
   }
 
 let private getInkToolsStack viewContext =
-    handler {
-      let! path = Handler.fromCtx Request.getRoute
-      let name = path.GetStringNonEmpty "name"
-      let sizeStr = path.GetStringNonEmpty "size"
-      let nil = path.GetStringNonEmpty "nil"
-      match System.Int32.TryParse sizeStr with
-      | true, size ->
-        let! template = viewContext.contextualTemplate
-        let view =      
-          Elem.create "ink-element" [] [_pre [] [_code [] [ _text (generatePluginInclude (StackInclude (name, size, nil)))]]]
-        return Response.ofHtml (template "Generated stack include" [view])
-        
-      | false, _ ->
-        return Response.withStatusCode 400 >> Response.ofEmpty
-    }
-    |> Handler.flatten
-    |> get "/inkTools/{name}/{size}/{nil}"
+  handler {
+    let! path = Handler.fromCtx Request.getRoute
+    let name = path.GetStringNonEmpty "name"
+    let sizeStr = path.GetStringNonEmpty "size"
+    let nil = path.GetStringNonEmpty "nil"
+
+    match System.Int32.TryParse sizeStr with
+    | true, size ->
+      let! template = viewContext.contextualTemplate
+
+      let view =
+        Elem.create
+          "ink-element"
+          []
+          [ _pre
+              []
+              [ _code
+                  []
+                  [ _text (
+                      generatePluginInclude (StackInclude(name, size, nil))
+                    ) ] ] ]
+
+      return Response.ofHtml (template "Generated stack include" [ view ])
+
+    | false, _ -> return Response.withStatusCode 400 >> Response.ofEmpty
+  }
+  |> Handler.flatten
+  |> get "/inkTools/{name}/{size}/{nil}"
 
 let nav =
   handler {

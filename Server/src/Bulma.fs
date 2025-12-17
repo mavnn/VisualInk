@@ -115,12 +115,12 @@ let cell attr content =
   _div (Attr.merge [ _class_ "cell" ] attr) content
 
 let title attr text =
-  _h1 (Attr.merge [ _class_ "title" ] attr) [ _text text ]
+  _h1 (Attr.merge [ _class_ "title" ] attr) [ _textEnc text ]
 
 let subtitle attr text =
   _h2
     (Attr.merge [ _class_ "subtitle" ] attr)
-    [ _text text ]
+    [ _textEnc text ]
 
 let section attr content =
   _section (Attr.merge [ _class_ "section" ] attr) content

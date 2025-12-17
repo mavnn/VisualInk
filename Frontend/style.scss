@@ -111,3 +111,11 @@ dialog {
 .cm-lineNumbers.hideLineNumbers {
     display: none !important;
 }
+
+.dialogue:before {
+    content: open-quote;
+}
+
+.dialogue:after {
+    content: close-quote;
+}

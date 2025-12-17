@@ -1,7 +1,7 @@
 import { EditorView, basicSetup } from 'codemirror';
 import { InkLanguageSupport } from '@mavnn/codemirror-lang-ink'
 import { EditorState } from "@codemirror/state"
-import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language"
+import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from "@codemirror/language"
 import { getConnection, makePeerExtension, collabGroupName, startCollabAuthority, controlExtension, titleEffect } from './Collab'
 import { linter, lintGutter } from '@codemirror/lint'
 import { CompletionContext, autocompletion, snippetCompletion } from "@codemirror/autocomplete"
@@ -31,7 +31,7 @@ export class InkElement extends HTMLElement {
       doc: text,
       extensions: [
         syntaxHighlighting(defaultHighlightStyle),
-        InkLanguageSupport({ dialect: "visualink"}),
+        InkLanguageSupport({ dialect: "visualink" }),
         EditorState.readOnly.of(true),
         EditorView.editable.of(false)
       ]
@@ -119,10 +119,10 @@ export class InkEditor extends HTMLElement {
           override:
             [
               tildeFromDashCompletions,
-              tildeCompletions,
               tagCompletions,
               sectionCompletions,
-              inkCompletions
+              inkCompletions,
+              syntaxCompletions
             ]
         }),
         changeListener(token),
@@ -136,7 +136,7 @@ export class InkEditor extends HTMLElement {
   }
 }
 
-var cachedAutocompleteContext: {lists: string[], globalVariables: string[]} = { lists: [], globalVariables: [] }
+var cachedAutocompleteContext: { lists: string[], globalVariables: string[], divertTargets: string[] } = { lists: [], globalVariables: [], divertTargets: ["DONE", "END"] }
 
 const callLinter = (token: { header: string, value: string }) => async (view: EditorView) => {
   let title = (document.getElementById('story-title')! as HTMLInputElement).value;
@@ -148,7 +148,7 @@ const callLinter = (token: { header: string, value: string }) => async (view: Ed
     }
   );
   const { lines, autocompleteContext } = await response.json();
-  cachedAutocompleteContext = autocompleteContext
+  if(autocompleteContext) { cachedAutocompleteContext = autocompleteContext }
   const runButton = document.getElementById('run-button');
   if (runButton) {
     lines.length === 0 ? runButton.removeAttribute('disabled') : runButton.setAttribute('disabled', "true");
@@ -180,18 +180,8 @@ function tildeFromDashCompletions(context: CompletionContext) {
     from: word?.from ?? context.pos,
     options: [
       { label: "---", type: "text", apply: "~", detail: "tilde" },
-      ...cachedAutocompleteContext.globalVariables.map((v) => snippetCompletion(`~${v}`, {label: `~${v}`}))
+      ...cachedAutocompleteContext.globalVariables.map((v) => snippetCompletion(`~${v}`, { label: `~${v}` }))
     ]
-  }
-}
-
-function tildeCompletions(context: CompletionContext) {
-  let word = context.matchBefore(/~(\w*)/)
-  if ((!word || word.from == word.to) && !context.explicit)
-    return null
-  return {
-    from: word?.from ?? context.pos,
-    options: cachedAutocompleteContext.globalVariables.map((v) => snippetCompletion(`~${v}`, {label: `~${v}`}))
   }
 }
 
@@ -212,7 +202,7 @@ function tagCompletions(context: CompletionContext) {
 }
 
 function sectionCompletions(context: CompletionContext) {
-  let word = context.matchBefore(/==+/)
+  let word = context.matchBefore(/^==+/)
   if ((!word || word.from == word.to) && !context.explicit)
     return null
   return {
@@ -224,7 +214,7 @@ function sectionCompletions(context: CompletionContext) {
 }
 
 function inkCompletions(context: CompletionContext) {
-  let word = context.matchBefore(/\w*/)
+  let word = context.matchBefore(/^\w*/)
   if ((!word || word.from == word.to) && !context.explicit)
     return null
   return {
@@ -233,4 +223,32 @@ function inkCompletions(context: CompletionContext) {
       snippetCompletion('VAR ${name} = ${value}', { label: "VAR", detail: "Add a variable to your script" }),
     ]
   }
+}
+
+function speakerCompletions(context: CompletionContext) {
+  let nodeBefore = syntaxTree(context.state).resolveInner(context.pos, - 1)
+}
+
+function syntaxCompletions(context: CompletionContext) {
+  let nodeBefore = syntaxTree(context.state).resolveInner(context.pos, - 1)
+  let nodeAfter = syntaxTree(context.state).resolveInner(context.pos, 1)
+  if (nodeBefore.name == "DivertArrow") {
+    const options = cachedAutocompleteContext.divertTargets.map((target) => ({ label: "-> " + target }))
+    console.log(options)
+    return {
+      from: nodeBefore.from,
+      options,
+      validFor: /->\W*\w*/
+    }
+  } else if (nodeBefore.name == "VariableAssignment") {
+    if(nodeBefore.firstChild && context.state.sliceDoc(nodeBefore.firstChild.from, nodeBefore.firstChild.to) == "speaker") {
+
+    }
+    const options = cachedAutocompleteContext.globalVariables.map((variable) => ({label: "~" + variable }))
+    return {
+      from: nodeBefore.from,
+      options,
+      validFor: /~\w*/
+    }
+  } else { return null }
 }

@@ -90,6 +90,7 @@ export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token 
     let nonownerActions: TaggenElement[] =
       [{
         tag: "button",
+        className: "button is-primary",
         attributes: {
           id: "run-button",
           disabled: "",
@@ -97,7 +98,6 @@ export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token 
         },
         handlers:
           [[
-
             "click",
             () => {
               const ink = view.state.doc.toString()
@@ -112,7 +112,8 @@ export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token 
                 headers: { [token.header]: token.value }
               })
             }
-          ]]
+          ]],
+        children: ["Test run"]
 
       }]
     let ownerActions: TaggenElement[] = [

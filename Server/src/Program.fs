@@ -65,7 +65,7 @@ let skeletalTemplate title content =
         []
         [ _title
             [ Hx.swapOob OuterHTML ]
-            [ _text (title + " | Visual Ink") ]
+            [ _textEnc title; _text " | Visual Ink" ]
           _meta [ _charset_ "utf-8" ]
           _meta
             [ _name_ "viewport"
@@ -103,6 +103,7 @@ let makeNavbar: Handler<XmlNode, HttpHandler> =
   handler {
     let! userView = User.navbarAccountView ()
     let! scriptNav = Script.nav
+    let! playthroughNav = Playthrough.nav
 
     return
       B.navbar
@@ -117,7 +118,8 @@ let makeNavbar: Handler<XmlNode, HttpHandler> =
                 [ scriptNav
                   StoryAssets.speakerNav
                   StoryAssets.sceneNav
-                  StoryAssets.musicNav ]
+                  StoryAssets.musicNav
+                  playthroughNav ]
               B.navbarEnd [] (InfoPages.nav :: userView) ] }
   }
 
