@@ -20,27 +20,22 @@ open System.Security.Claims
 module B = Bulma
 
 let connectionString =
-  let postgresPort =
-    System.Environment.GetEnvironmentVariable "PGPORT"
+  let postgresPort = System.Environment.GetEnvironmentVariable "PGPORT"
 
-  let postgresHost =
-    System.Environment.GetEnvironmentVariable "PGHOST"
+  let postgresHost = System.Environment.GetEnvironmentVariable "PGHOST"
 
   let postgresUser =
-    let envUser =
-      System.Environment.GetEnvironmentVariable "PGUSER"
+    let envUser = System.Environment.GetEnvironmentVariable "PGUSER"
 
     if isNull envUser then "postgres" else envUser
 
   let postgresDB =
-    let envUser =
-      System.Environment.GetEnvironmentVariable "PGDATABASE"
+    let envUser = System.Environment.GetEnvironmentVariable "PGDATABASE"
 
     if isNull envUser then "postgres" else envUser
 
   let postgresPassword =
-    let envPassword =
-      System.Environment.GetEnvironmentVariable "PGPASSWORD"
+    let envPassword = System.Environment.GetEnvironmentVariable "PGPASSWORD"
 
     if isNull envPassword then
       ""
@@ -69,12 +64,10 @@ let skeletalTemplate title content =
           _meta [ _charset_ "utf-8" ]
           _meta
             [ _name_ "viewport"
-              _content_
-                "width=device-width, initial-scale=1" ]
+              _content_ "width=device-width, initial-scale=1" ]
           _meta
             [ _name_ "htmx-config"
-              _content_
-                """{&quot;requestClass&quot;:&quot;is-loading&quot;}""" ]
+              _content_ """{&quot;requestClass&quot;:&quot;is-loading&quot;}""" ]
           _link
             [ _rel_ "icon"
               _type_ "image/png"
@@ -90,7 +83,16 @@ let skeletalTemplate title content =
             [ _rel_ "stylesheet"
               _href_
                 "https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" ]
-          _script [ _src_ "/bundle.js" ] [] ]
+          _script [ _src_ "/bundle.js" ] []
+          _link
+            [ _rel_ "image_src"
+              _href_ "https://visualink.mavnn.eu/example.png" ]
+          _meta
+            [ _name_ "twitter:image"
+              Attr.create "property" "og:image"
+              _content_ "https://visualink.mavnn.eu/example.png" ]
+
+          ]
       _body
         [ _id_ "body"; Hx.ext "morph"; Hx.boostOn ]
         [ _div
@@ -109,9 +111,7 @@ let makeNavbar: Handler<XmlNode, HttpHandler> =
       B.navbar
         [ _id_ "navbar" ]
         { brand =
-            [ B.navbarItemA
-                [ _href_ "/"; _id_ "site-logo" ]
-                [ Logo.svg ] ]
+            [ B.navbarItemA [ _href_ "/"; _id_ "site-logo" ] [ Logo.svg ] ]
           menu =
             [ B.navbarStart
                 []
@@ -145,8 +145,7 @@ let intro =
       the Coding Games with a Story course for your age group, which run once per half term.
   """
   |> (fun s -> s.Split '\n')
-  |> Array.map (fun line ->
-    line.Substring(min 6 line.Length))
+  |> Array.map (fun line -> line.Substring(min 6 line.Length))
   |> String.concat "\n"
   |> Markdig.Markdown.ToHtml
 
@@ -160,9 +159,7 @@ let contextualTemplate: ContextualTemplate =
         skeletalTemplate
           title
           [ navbar
-            B.section
-              [ _class_ "is-flex-grow-1" ]
-              [ B.container [] content ]
+            B.section [ _class_ "is-flex-grow-1" ] [ B.container [] content ]
             footer ]
   }
 
@@ -179,20 +176,15 @@ let indexGet =
       [ B.title [] "Welcome to Visual Ink!"
         B.columns
           []
-          [ B.column
-              [ _class_ "is-half" ]
-              [ B.content [] [ _text intro ] ]
+          [ B.column [ _class_ "is-half" ] [ B.content [] [ _text intro ] ]
             B.column
               [ _class_ "is-half" ]
               [
 
                 B.image
-                  [ _class_ "mb-2"
-                    _style_
-                      "width: 100%; object-fill: none;" ]
+                  [ _class_ "mb-2"; _style_ "width: 100%; object-fill: none;" ]
                   [ _src_ "/example.png"
-                    _style_
-                      "border-radius: var(--bulma-radius-medium);"
+                    _style_ "border-radius: var(--bulma-radius-medium);"
                     _alt_
                       "Picture of a visual novel play through in progress with a cartoon character saying 'Once upon a time'" ]
                 B.block
@@ -200,9 +192,7 @@ let indexGet =
                   [ Elem.create
                       "ink-element"
                       []
-                      [ _pre
-                          []
-                          [ _code [] [ _text exampleInk ] ] ] ] ] ] ]
+                      [ _pre [] [ _code [] [ _text exampleInk ] ] ] ] ] ] ]
       |> B.container []
       |> List.singleton
       |> template "Visual Ink"
@@ -220,8 +210,7 @@ let viewContext: View.ViewContext =
   { navbar = makeNavbar
     contextualTemplate = contextualTemplate
     skeletalTemplate = skeletalTemplate
-    notFound =
-      Response.withStatusCode 404 >> Response.ofEmpty }
+    notFound = Response.withStatusCode 404 >> Response.ofEmpty }
 
 let endpoints =
   List.concat
@@ -232,8 +221,7 @@ let endpoints =
       StoryAssets.Service.endpoints viewContext
       InfoPages.Service.endpoints viewContext ]
 
-type UserIdEnricher
-  (httpContextAccessor: IHttpContextAccessor) =
+type UserIdEnricher(httpContextAccessor: IHttpContextAccessor) =
   interface Core.ILogEventEnricher with
     member _.Enrich(logEvent, propertyFactory) =
       let ctx = httpContextAccessor.HttpContext
@@ -241,11 +229,7 @@ type UserIdEnricher
       match ctx.User with
       | null -> ()
       | principal ->
-        match
-          System.Guid.TryParse(
-            principal.FindFirstValue "userId"
-          )
-        with
+        match System.Guid.TryParse(principal.FindFirstValue "userId") with
         | true, guid ->
           logEvent.AddPropertyIfAbsent(
             propertyFactory.CreateProperty("UserId", guid)
@@ -257,20 +241,13 @@ let main _ =
   let makeLogConfig (lc: LoggerConfiguration) =
     let logConfig =
       lc.MinimumLevel
-        .Override(
-          "Microsoft.AspNetCore",
-          LogEventLevel.Warning
-        )
+        .Override("Microsoft.AspNetCore", LogEventLevel.Warning)
         .Enrich.FromLogContext()
 
     if
-      System.Environment.GetEnvironmentVariable
-        "SERILOG_JSON_LOGGING" = "true"
+      System.Environment.GetEnvironmentVariable "SERILOG_JSON_LOGGING" = "true"
     then
-      logConfig.WriteTo.Console(
-        RenderedCompactJsonFormatter()
-      )
-      |> ignore
+      logConfig.WriteTo.Console(RenderedCompactJsonFormatter()) |> ignore
     else
       logConfig.WriteTo.Console(
         outputTemplate =
@@ -280,15 +257,13 @@ let main _ =
 
     logConfig
 
-  Log.Logger <-
-    makeLogConfig(LoggerConfiguration()).CreateLogger()
+  Log.Logger <- makeLogConfig(LoggerConfiguration()).CreateLogger()
 
   let configureMarten: System.Action<StoreOptions> =
-    System.Action<StoreOptions>
-      (fun (storeOpts: StoreOptions) ->
-        storeOpts.Connection connectionString
+    System.Action<StoreOptions>(fun (storeOpts: StoreOptions) ->
+      storeOpts.Connection connectionString
 
-        storeOpts.UseSystemTextJsonForSerialization())
+      storeOpts.UseSystemTextJsonForSerialization())
 
   let builder =
     WebApplication
@@ -296,19 +271,15 @@ let main _ =
       .AddServices(fun _ ->
         HttpServiceCollectionExtensions.AddHttpContextAccessor)
       .AddServices(fun _ sc ->
-        SignalRDependencyInjectionExtensions
-          .AddSignalR(sc)
-          .Services)
-      .AddServices(fun _ sc ->
-        sc.AddSingleton<UserIdEnricher>())
+        SignalRDependencyInjectionExtensions.AddSignalR(sc).Services)
+      .AddServices(fun _ sc -> sc.AddSingleton<UserIdEnricher>())
       .AddServices(fun _ sc ->
         SerilogServiceCollectionExtensions.AddSerilog(
           sc,
           fun sp lc ->
             let enricher = sp.GetService<UserIdEnricher>()
 
-            (makeLogConfig lc).Enrich.With enricher
-            |> ignore
+            (makeLogConfig lc).Enrich.With enricher |> ignore
         ))
       .AddServices(fun _ sc ->
         MartenServiceCollectionExtensions
@@ -333,31 +304,21 @@ let main _ =
 
         sc)
       .AddServices(fun _ sc ->
-        sc.Configure<FormOptions>
-          (fun (opts: FormOptions) ->
-            opts.BufferBody <- true
-            // 5mb file limit
-            opts.MultipartBodyLengthLimit <-
-              5L * 1024L * 1024L))
+        sc.Configure<FormOptions>(fun (opts: FormOptions) ->
+          opts.BufferBody <- true
+          // 5mb file limit
+          opts.MultipartBodyLengthLimit <- 5L * 1024L * 1024L))
 
   builder
     .Build()
-    .Use(
-      SerilogApplicationBuilderExtensions.UseSerilogRequestLogging
-    )
+    .Use(SerilogApplicationBuilderExtensions.UseSerilogRequestLogging)
     .Use(StaticFileExtensions.UseStaticFiles)
     .UseRouting()
     .Use(fun (builder: IApplicationBuilder) ->
       builder.UseEndpoints(fun endpointBuilder ->
-        endpointBuilder.MapHub<CollabHub.CollabHub>
-          "/collab"
-        |> ignore)
-    )
+        endpointBuilder.MapHub<CollabHub.CollabHub> "/collab" |> ignore))
     .UseFalco(endpoints)
-    .Run(
-      Response.withStatusCode 404
-      >> Response.ofPlainText "Not found"
-    )
+    .Run(Response.withStatusCode 404 >> Response.ofPlainText "Not found")
 
   Log.CloseAndFlush()
 
