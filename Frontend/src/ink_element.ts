@@ -5,6 +5,7 @@ import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from "@codemirr
 import { getConnection, makePeerExtension, collabGroupName, startCollabAuthority, controlExtension, titleEffect } from './Collab'
 import { linter, lintGutter } from '@codemirror/lint'
 import { CompletionContext, autocompletion, snippetCompletion } from "@codemirror/autocomplete"
+import { SyntaxNode } from '@lezer/common'
 
 export class InkElement extends HTMLElement {
   private observer;
@@ -18,6 +19,7 @@ export class InkElement extends HTMLElement {
   // added, so all we do here is wait for the code to
   // be added if that's the case.
   connectedCallback() {
+    // DOM hasn't finished construction yet
     if (this.childElementCount === 0) {
       this.observer.observe(this, { childList: true })
     } else {
@@ -26,12 +28,21 @@ export class InkElement extends HTMLElement {
   }
 
   addEditor() {
+    // It's possible for this to be triggered via a callback
+    // even if the editor has already been drawn via the 
+    // back button
+    if (this.firstElementChild?.className.includes("cm-editor")) {
+      return
+    }
+    console.log("Adding ink element")
     const text = this.textContent!.trim()
+    const inkSupport =
+      InkLanguageSupport({ dialect: "visualink" })
     const view = new EditorView({
       doc: text,
       extensions: [
         syntaxHighlighting(defaultHighlightStyle),
-        InkLanguageSupport({ dialect: "visualink" }),
+        inkSupport,
         EditorState.readOnly.of(true),
         EditorView.editable.of(false)
       ]
@@ -59,6 +70,7 @@ export class InkEditor extends HTMLElement {
   // be added if that's the case.
   connectedCallback() {
     console.log("Connected callback triggered", this.childElementCount)
+    // DOM hasn't finished construction yet
     if (this.childElementCount === 0) {
       this.observer.observe(this, { childList: true })
     } else {
@@ -67,6 +79,10 @@ export class InkEditor extends HTMLElement {
   }
 
   async addEditor() {
+    const existing = [... this.children ?? []].find((c) => c.className.includes("cm-editor"))
+    if (existing) {
+      existing.remove()
+    }
     console.log("Initializing editor", this.childElementCount)
     let doc = ""
     let title = this.getAttribute("title") ?? "New title"
@@ -132,11 +148,11 @@ export class InkEditor extends HTMLElement {
     });
 
     this.observer.disconnect()
-    this.replaceChildren(editor.dom)
+    this.appendChild(editor.dom)
   }
 }
 
-var cachedAutocompleteContext: { lists: string[], globalVariables: string[], divertTargets: string[] } = { lists: [], globalVariables: [], divertTargets: ["DONE", "END"] }
+var cachedAutocompleteContext: { lists: string[], globalVariables: string[], divertTargets: Record<string, string[]> } = { lists: [], globalVariables: [], divertTargets: { DONE: [], END: [] } }
 
 const callLinter = (token: { header: string, value: string }) => async (view: EditorView) => {
   let title = (document.getElementById('story-title')! as HTMLInputElement).value;
@@ -148,7 +164,7 @@ const callLinter = (token: { header: string, value: string }) => async (view: Ed
     }
   );
   const { lines, autocompleteContext } = await response.json();
-  if(autocompleteContext) { cachedAutocompleteContext = autocompleteContext }
+  if (autocompleteContext) { cachedAutocompleteContext = autocompleteContext }
   const runButton = document.getElementById('run-button');
   if (runButton) {
     lines.length === 0 ? runButton.removeAttribute('disabled') : runButton.setAttribute('disabled', "true");
@@ -229,22 +245,35 @@ function speakerCompletions(context: CompletionContext) {
   let nodeBefore = syntaxTree(context.state).resolveInner(context.pos, - 1)
 }
 
+function getKnotName(context: CompletionContext, syntaxNode: SyntaxNode) {
+  if (syntaxNode.name == "Knot") {
+    if (syntaxNode.firstChild) {
+      return context.state.sliceDoc(syntaxNode.firstChild.from, syntaxNode.firstChild.to)
+    }
+  } else if (syntaxNode.parent) {
+    return getKnotName(context, syntaxNode.parent)
+  } else {
+    return null
+  }
+}
+
 function syntaxCompletions(context: CompletionContext) {
   let nodeBefore = syntaxTree(context.state).resolveInner(context.pos, - 1)
   let nodeAfter = syntaxTree(context.state).resolveInner(context.pos, 1)
+  console.log(nodeBefore)
   if (nodeBefore.name == "DivertArrow") {
-    const options = cachedAutocompleteContext.divertTargets.map((target) => ({ label: "-> " + target }))
-    console.log(options)
+    const knotName = getKnotName(context, nodeBefore)
+    const options = Object.entries(cachedAutocompleteContext.divertTargets).flatMap(([knot, stitches]) => [{ label: "-> " + knot }, ...stitches.map((stitch) => ({ label: "-> " + (knot === knotName ? stitch : `${knot}.${stitch}`) }))])
     return {
       from: nodeBefore.from,
       options,
       validFor: /->\W*\w*/
     }
   } else if (nodeBefore.name == "VariableAssignment") {
-    if(nodeBefore.firstChild && context.state.sliceDoc(nodeBefore.firstChild.from, nodeBefore.firstChild.to) == "speaker") {
+    if (nodeBefore.firstChild && context.state.sliceDoc(nodeBefore.firstChild.from, nodeBefore.firstChild.to) == "speaker") {
 
     }
-    const options = cachedAutocompleteContext.globalVariables.map((variable) => ({label: "~" + variable }))
+    const options = cachedAutocompleteContext.globalVariables.map((variable) => ({ label: "~" + variable }))
     return {
       from: nodeBefore.from,
       options,

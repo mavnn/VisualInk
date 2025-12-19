@@ -621,9 +621,13 @@ let private inkToResponse title (error: string, t: Ink.ErrorType) =
       message = error
       severity = severity }
 
+type DivertTarget =
+  | GlobalTarget of string
+  | StitchTarget of (string * string)
+
 type AutocompleteContent =
   { lists: string list
-    divertTargets: string list
+    divertTargets: System.Collections.Generic.Dictionary<string, string list>
     globalVariables: string list }
 
 let private getAutocompleteContext (story: Ink.Parsed.Story) =
@@ -631,9 +635,35 @@ let private getAutocompleteContext (story: Ink.Parsed.Story) =
 
   let divertTargets =
     story.FindAll<Ink.Parsed.FlowBase>()
-    |> Seq.filter (fun flow -> flow.name <> null)
-    |> Seq.map (fun flow -> flow.name)
-    |> List.ofSeq
+    |> Seq.choose (fun flow ->
+      match flow.flowLevel with
+      | Ink.Parsed.FlowLevel.Knot -> GlobalTarget flow.name |> Some
+      | Ink.Parsed.FlowLevel.Stitch ->
+        match flow.parent with
+        | :? Ink.Parsed.FlowBase as fb ->
+          StitchTarget(fb.name, flow.name) |> Some
+        | _ -> None
+      | _ -> None)
+    |> Seq.fold
+      (fun (targets : System.Collections.Generic.Dictionary<string, string list>) flow ->
+         match flow with
+         | GlobalTarget t ->
+           if targets.ContainsKey t then
+             targets
+           else
+             targets.Add(t, [])
+             targets
+         | StitchTarget (knot, stitch) ->
+           if targets.ContainsKey knot then
+             targets.[knot] <- stitch::targets.[knot]
+             targets
+           else
+             targets.Add(knot, [stitch])
+             targets
+       )
+      (System.Collections.Generic.Dictionary<string, string list>())
+  divertTargets.Add("DONE", [])
+  divertTargets.Add("END", [])
 
   let globalVariables =
     story.FindAll<Ink.Parsed.VariableAssignment>()
@@ -649,7 +679,7 @@ let private getAutocompleteContext (story: Ink.Parsed.Story) =
 
   { lists = []
     globalVariables = globalVariables
-    divertTargets = "DONE"::"END"::divertTargets }
+    divertTargets = divertTargets }
 
 [<JsonFSharpConverter(SkippableOptionFields = SkippableOptionFields.Always)>]
 type LintResponse =
