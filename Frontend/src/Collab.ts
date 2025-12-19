@@ -13,6 +13,12 @@ export const getConnection = () => _connection === null ? new signalR.HubConnect
 
 export const titleEffect = StateEffect.define<string>()
 
+export type AssetInfo = {
+  speakerInfo: { name: string, emotes: { emote: string }[] }[],
+  sceneInfo: { name: string, tags: { tag: string }[] }[],
+  musicInfo: { name: string }[]
+}
+
 export type ControlExtensionConfig = {
   startingTitle: string,
   scriptId: string | null,
@@ -20,7 +26,8 @@ export type ControlExtensionConfig = {
   token: {
     header: string,
     value: string
-  }
+  },
+  assetInfo: AssetInfo
 }
 
 const makeChooser = <T>(view: EditorView, input: { id: string, data: T[], map: (t: T) => { text: string, insert: string } }) => {
@@ -73,10 +80,9 @@ const makeChooser = <T>(view: EditorView, input: { id: string, data: T[], map: (
   }
 }
 
-export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token }: ControlExtensionConfig) => {
-  const speakerInfo = JSON.parse(document.getElementById("speaker-json")?.innerText ?? "[]")
-  const sceneInfo = JSON.parse(document.getElementById("scene-json")?.innerText ?? "[]")
-  const musicInfo = JSON.parse(document.getElementById("music-json")?.innerText ?? "[]")
+export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token, assetInfo }: ControlExtensionConfig) => {
+
+  const { speakerInfo, sceneInfo, musicInfo } = assetInfo
   const titleField = StateField.define<string>({
     create() {
       return startingTitle

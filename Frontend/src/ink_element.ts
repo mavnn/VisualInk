@@ -2,7 +2,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { InkLanguageSupport } from '@mavnn/codemirror-lang-ink'
 import { EditorState } from "@codemirror/state"
 import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from "@codemirror/language"
-import { getConnection, makePeerExtension, collabGroupName, startCollabAuthority, controlExtension, titleEffect } from './Collab'
+import { getConnection, makePeerExtension, startCollabAuthority, controlExtension, titleEffect, AssetInfo } from './Collab'
 import { linter, lintGutter } from '@codemirror/lint'
 import { CompletionContext, autocompletion, snippetCompletion } from "@codemirror/autocomplete"
 import { SyntaxNode } from '@lezer/common'
@@ -91,6 +91,11 @@ export class InkEditor extends HTMLElement {
     let token = { header: tokenHeader, value: tokenValue }
     let scriptId = this.getAttribute("script-id")
     let publishedUrl = this.getAttribute("published-url")
+    let speakerInfo = JSON.parse(document.getElementById("speaker-json")?.innerText ?? "[]")
+    let sceneInfo = JSON.parse(document.getElementById("scene-json")?.innerText ?? "[]")
+    let musicInfo = JSON.parse(document.getElementById("music-json")?.innerText ?? "[]")
+    let assetInfo = { speakerInfo, sceneInfo, musicInfo }
+
     if (window.location.href.endsWith('demo')) {
       console.log('Trying to load stored demo script')
       let stored = localStorage.getItem('ink')
@@ -138,12 +143,12 @@ export class InkEditor extends HTMLElement {
               tagCompletions,
               sectionCompletions,
               inkCompletions,
-              syntaxCompletions
+              syntaxCompletions(assetInfo)
             ]
         }),
         changeListener(token),
         InkLanguageSupport({ dialect: "visualink" }),
-        controlExtension({ startingTitle: title, scriptId, publishedUrl, token })
+        controlExtension({ startingTitle: title, scriptId, publishedUrl, token, assetInfo })
       ],
     });
 
@@ -241,10 +246,6 @@ function inkCompletions(context: CompletionContext) {
   }
 }
 
-function speakerCompletions(context: CompletionContext) {
-  let nodeBefore = syntaxTree(context.state).resolveInner(context.pos, - 1)
-}
-
 function getKnotName(context: CompletionContext, syntaxNode: SyntaxNode) {
   if (syntaxNode.name == "Knot") {
     if (syntaxNode.firstChild) {
@@ -257,9 +258,8 @@ function getKnotName(context: CompletionContext, syntaxNode: SyntaxNode) {
   }
 }
 
-function syntaxCompletions(context: CompletionContext) {
+const syntaxCompletions = (assetInfo: AssetInfo) => (context: CompletionContext) => {
   let nodeBefore = syntaxTree(context.state).resolveInner(context.pos, - 1)
-  let nodeAfter = syntaxTree(context.state).resolveInner(context.pos, 1)
   console.log(nodeBefore)
   if (nodeBefore.name == "DivertArrow") {
     const knotName = getKnotName(context, nodeBefore)
@@ -270,14 +270,47 @@ function syntaxCompletions(context: CompletionContext) {
       validFor: /->\W*\w*/
     }
   } else if (nodeBefore.name == "VariableAssignment") {
-    if (nodeBefore.firstChild && context.state.sliceDoc(nodeBefore.firstChild.from, nodeBefore.firstChild.to) == "speaker") {
-
-    }
     const options = cachedAutocompleteContext.globalVariables.map((variable) => ({ label: "~" + variable }))
     return {
       from: nodeBefore.from,
       options,
       validFor: /~\w*/
     }
-  } else { return null }
+  } else if (nodeBefore.name == "String") {
+    // is this string being assigned to one of our magic variables?
+    const parent = nodeBefore.parent
+    if(!parent || parent.name !== "VariableAssignment") {
+      return null
+    }
+    const identifier = parent.firstChild ? { name: context.state.sliceDoc(parent.firstChild.from, parent.firstChild.to), endOfIndentifier: parent.firstChild.to } : null
+    if (identifier === null) {
+      return null
+    }
+    if (identifier.name === "speaker") {
+      const options = assetInfo.speakerInfo.map((s) => ({ label: s.name }))
+      return {
+        from: nodeBefore.from + 1,
+        options,
+        validFor: /~\w*/
+      }
+    }
+    if (identifier.name === "scene") {
+      const options = assetInfo.sceneInfo.flatMap((s) => [{ label: s.name }, ...s.tags.map((t) => ({ label: `${s.name} ${t.tag}`}))])
+      return {
+        from: nodeBefore.from + 1,
+        options,
+        validFor: /~\w*/
+      }
+    }
+    if (identifier.name === "music") {
+      const options = assetInfo.musicInfo.map((s) => ({ label: s.name }))
+      return {
+        from: nodeBefore.from + 1,
+        options,
+        validFor: /~\w*/
+      }
+    }
+    return null
+  }
+  else { return null }
 }
