@@ -4,9 +4,9 @@
     "net9.0": {
       "Falco": {
         "type": "Direct",
-        "requested": "[5.1.0, )",
-        "resolved": "5.1.0",
-        "contentHash": "0xTYuBeKLFJxRnmeIWK5jSSFCVJQW34F1HZRZWi6unK7jBF06/4jjFzn3r3kz9euJ+F9VqyxTvqU17il4k0XdQ==",
+        "requested": "[5.2.0, )",
+        "resolved": "5.2.0",
+        "contentHash": "pbrvm0Dz6C1ZSseKAKEi7RE2yexYeWGQkf9srWA1lHlJdrgWRXJJfjYGGygTQUJLiU7qKNL6Ar3jdnZlre0EaQ==",
         "dependencies": {
           "FSharp.Core": "6.0.0",
           "Falco.Markup": "1.4.0"

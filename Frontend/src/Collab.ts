@@ -114,13 +114,12 @@ export const controlExtension = ({ startingTitle, scriptId, publishedUrl, token,
               htmx.ajax('post', "/playground/playthrough", {
                 target: "#page",
                 select: "#page",
-                values: { ink },
+                values: { ink, title },
                 headers: { [token.header]: token.value }
               })
             }
           ]],
         children: ["Test run"]
-
       }]
     let ownerActions: TaggenElement[] = [
       {

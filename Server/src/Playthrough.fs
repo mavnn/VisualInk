@@ -841,10 +841,8 @@ let startExampleGet viewContext =
 
 let startPlaygroundPost viewContext =
   handler {
-    let! ink =
-      Handler.formDataOrFail
-        (Response.withStatusCode 400 >> Response.ofEmpty)
-        (fun fd -> fd.TryGetStringNonEmpty "ink")
+    let! ink = Handler.fromCtx (fun ctx -> ctx.Request.Form.["ink"].[0])
+    printfn "%s" ink
 
     let! script = makePlaygroundScript ink
 

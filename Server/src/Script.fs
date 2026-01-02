@@ -762,7 +762,9 @@ let makePlaygroundScript ink =
           writerId = fakeUserId.ToString() }
 
       return script
-    | None -> return failwithf "The playground Ink didn't compile"
+    | None ->
+      eprintfn "%A" compileResult.errors
+      return failwithf "The playground Ink didn't compile"
   }
 
 let getExampleScript filename =
