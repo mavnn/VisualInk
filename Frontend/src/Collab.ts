@@ -419,15 +419,17 @@ const cursorExtension = (tag: string) => {
   return [cursorTransactionExtender, cursorTooltipField, cursorTooltipBaseTheme]
 }
 
+const collabPeerLogging = (...params: Parameters<typeof console.log>) => console.log("CollabPeer: ", ...params)
+
 export const makePeerExtension = (connection: signalR.HubConnection, groupName: string, tag: string, startVersion: number) => {
   collabGroupName = groupName
   let updates: (Update & { version: number })[] = []
   connection.on("UpdateBroadcast", (version: number, update: SerializedUpdate) => {
-    console.log("Received broadcast")
+    collabPeerLogging("Received broadcast")
     updates.push({ ...deserializeUpdate(update), version })
   })
   const pullUpdates = async (version: number) => {
-    console.log("Pulling updates")
+    collabPeerLogging("Pulling updates")
     const unseen = updates.filter(u => u.version >= version)
     updates = []
     if (unseen.length > 0) {
@@ -500,33 +502,66 @@ const deserializeUpdate = (json: SerializedUpdate): Update => {
   }
 }
 
-export const startCollabAuthority = (connection: signalR.HubConnection, groupName: string, startDocument: string) => {
-  let doc = Text.of(startDocument.split('\n'))
-  let updates: Update[] = []
-  let peerCount = 1
+const collabAuthLogging = (...params: Parameters<typeof console.log>) => console.log("CollabAuthority: ", ...params)
 
-  connection.on("RequestDocument", async (connectionId) => {
-    console.log("Document requested, sending current state")
-    let tag = peerCount
-    peerCount++
-    await connection.send("DocumentRequested", connectionId, { version: updates.length, doc: doc.toString(), tag: tag.toString() })
-  })
+class CollabAuthority {
+  constructor(private connection: signalR.HubConnection, startDocument: string, public scriptId: string) {
+    this.doc = Text.of(startDocument.split('\n'))
+    this.updates = []
+    connection.on("RequestDocument", this.RequestDocument.bind(this))
+    connection.on("PushUpdates", this.PushUpdates.bind(this))
+    this.groupName = new Promise<string>(
+      resolve => connection.on("GroupCreated", resolve)
+    )
+    connection.send("CreateGroup")
+  }
 
-  connection.on("PushUpdates", async (version, newUpdates: SerializedUpdate[]) => {
-    console.log("Receiving and merging updates", version, newUpdates)
+  async RequestDocument(connectionId: string) {
+    collabAuthLogging("Document requested, sending current state")
+    let tag = this.peerCount
+    this.peerCount++
+    await this.connection.send("DocumentRequested", connectionId, { version: this.updates.length, doc: this.doc.toString(), tag: tag.toString() })
+    collabAuthLogging("Document sent")
+  }
+
+  async PushUpdates(version: number, newUpdates: SerializedUpdate[]) {
+    collabAuthLogging("Receiving and merging updates", version, newUpdates)
     let received: readonly Update[] = newUpdates.map(deserializeUpdate)
-    if (version !== updates.length) {
-      console.log("Rebasing updates")
-      received = rebaseUpdates(received, updates.slice(version))
+    collabAuthLogging("Deserialized")
+    try {
+    if (version != this.updates.length) {
+      collabAuthLogging("Rebasing updates")
+      received = rebaseUpdates(received, this.updates.slice(version))
+    } else {
+      collabAuthLogging("No rebase required")
     }
+    collabAuthLogging("Recording received updates", received)
     for (let update of received) {
-      console.log("Pushing update")
-      updates.push(update)
-      doc = update.changes.apply(doc)
-      console.log("Broadcasting accepted update")
-      await connection.send("UpdateBroadcast", groupName, updates.length, serializeUpdate(update))
+      collabAuthLogging("Pushing update")
+      this.updates.push(update)
+      this.doc = update.changes.apply(this.doc)
+      collabAuthLogging("Broadcasting accepted update")
+      await this.connection.send("UpdateBroadcast", await this.groupName, this.updates.length, serializeUpdate(update))
+      collabAuthLogging("Broadcast sent")
+    }} catch (e) {
+      console.error(e)
     }
-  })
+  }
+
+  private doc: Text
+  private peerCount = 0
+  private updates: Update[]
+  public groupName: Promise<string>
+}
+
+export let activeCollabAuthority: CollabAuthority | null = null
+
+export const startCollabAuthority = (connection: signalR.HubConnection, startDocument: string, scriptId: string) => {
+  if(activeCollabAuthority && activeCollabAuthority.scriptId == scriptId) {
+    return
+  } else {
+    activeCollabAuthority = new CollabAuthority(connection, startDocument, scriptId)
+  }
 }
 
 const makeIcon = (name: string) => {

@@ -295,19 +295,12 @@ let main _ =
       .AddServices(InfoPages.Service.addService)
       .AddServices(fun _ ->
         AntiforgeryServiceCollectionExtensions.AddAntiforgery)
-      .AddServices(fun _ sc -> sc.AddAuthorization())
-      .AddServices(fun _ sc ->
-        AuthenticationServiceCollectionExtensions
-          .AddAuthentication(sc)
-          .AddCookie()
-        |> ignore
-
-        sc)
       .AddServices(fun _ sc ->
         sc.Configure<FormOptions>(fun (opts: FormOptions) ->
           opts.BufferBody <- true
           // 5mb file limit
           opts.MultipartBodyLengthLimit <- 5L * 1024L * 1024L))
+      .AddServices(fun _ sc -> sc.AddSingleton<Microsoft.AspNetCore.SignalR.IUserIdProvider, CollabHub.IdProvider>())
 
   builder
     .Build()

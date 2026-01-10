@@ -17,6 +17,7 @@ open System.Text.Json.Serialization
 open Falco.Security
 open Microsoft.Extensions.Logging
 open Microsoft.AspNetCore.Http
+open Microsoft.AspNetCore.Authentication
 
 module B = Bulma
 
@@ -59,9 +60,7 @@ type User =
 type UserRecordProjection() =
   inherit SingleStreamProjection<UserRecord, System.Guid>()
 
-  member _.Create
-    (userEvent: JasperFx.Events.IEvent<UserEvent>)
-    =
+  member _.Create(userEvent: JasperFx.Events.IEvent<UserEvent>) =
     match userEvent.Data with
     | Created user -> user
     | _ ->
@@ -95,8 +94,7 @@ type UserRecordProjection() =
                 PasswordHash = Some passwordHash }
       | Disabled ->
         match userRecord with
-        | { State = UserState.Disabled } ->
-          return userRecord
+        | { State = UserState.Disabled } -> return userRecord
         | { State = Active } ->
           return
             { userRecord with
@@ -126,9 +124,7 @@ type GroupEvent =
 type GroupRecordProjection() =
   inherit SingleStreamProjection<GroupRecord, System.Guid>()
 
-  member _.Create
-    (groupEvent: JasperFx.Events.IEvent<GroupEvent>)
-    =
+  member _.Create(groupEvent: JasperFx.Events.IEvent<GroupEvent>) =
     match groupEvent.Data with
     | GroupCreated group ->
       { Id = groupEvent.StreamId
@@ -173,21 +169,14 @@ type GroupRecordProjection() =
       | MemberAdded memberId ->
         return
           { groupRecord with
-              Members =
-                List.distinct (
-                  memberId :: groupRecord.Members
-                ) }
+              Members = List.distinct (memberId :: groupRecord.Members) }
       | MemberRemoved memberId ->
         return
           { groupRecord with
-              Members =
-                List.filter
-                  (fun i -> i <> memberId)
-                  groupRecord.Members }
+              Members = List.filter (fun i -> i <> memberId) groupRecord.Members }
     }
 
-type private LoginFormData =
-  { username: string; password: string }
+type private LoginFormData = { username: string; password: string }
 
 type private GoogleRedirectData = { credential: string }
 
@@ -197,9 +186,7 @@ type private LoginData =
 
 let private findUserRecordFrom (googleId: string) =
   handler {
-    let! documentStore =
-      Handler.fromCtx (fun ctx ->
-        ctx.Plug<IDocumentStore>())
+    let! documentStore = Handler.fromCtx (fun ctx -> ctx.Plug<IDocumentStore>())
 
     let session = documentStore.QuerySession()
 
@@ -207,15 +194,9 @@ let private findUserRecordFrom (googleId: string) =
       session
         .Query<UserRecord>()
         .Where(fun x ->
-          x.MatchesSql(
-            "data -> 'State' ->> 'Case' = ?",
-            "Active"
-          ))
+          x.MatchesSql("data -> 'State' ->> 'Case' = ?", "Active"))
         .Where(fun x ->
-          x.MatchesSql(
-            "data -> 'ExternalInfo' ->> 'googleId' = ?",
-            googleId
-          ))
+          x.MatchesSql("data -> 'ExternalInfo' ->> 'googleId' = ?", googleId))
         .SingleOrDefaultAsync()
       |> Handler.returnTask
 
@@ -227,9 +208,7 @@ let private findUserRecordFrom (googleId: string) =
 
 let private findUserRecord (username: string) =
   handler {
-    let! documentStore =
-      Handler.fromCtx (fun ctx ->
-        ctx.Plug<IDocumentStore>())
+    let! documentStore = Handler.fromCtx (fun ctx -> ctx.Plug<IDocumentStore>())
 
     let session = documentStore.QuerySession()
 
@@ -238,26 +217,22 @@ let private findUserRecord (username: string) =
         session
           .Query<UserRecord>()
           .SingleOrDefaultAsync(fun ur ->
-            ur.MatchesSql(
-              "data -> 'State' ->> 'Case' = ?",
-              "Active"
-            )
+            ur.MatchesSql("data -> 'State' ->> 'Case' = ?", "Active")
             && ur.Username = username)
       )
   }
   |> Handler.map Option.ofObj
 
 type IUserService =
-  abstract member GetUser:
-    unit -> Handler<User option, HttpHandler>
+  abstract member GetUser: unit -> Handler<User option, HttpHandler>
 
   abstract member GetUserId: unit -> System.Guid option
 
+  abstract member GetConnectionIdentifier:
+    unit -> System.Threading.Tasks.Task<System.Guid>
+
 type UserService
-  (
-    docStore: IDocumentStore,
-    httpContextAccessor: IHttpContextAccessor
-  ) =
+  (docStore: IDocumentStore, httpContextAccessor: IHttpContextAccessor) =
   let mutable user: User option = None
 
   interface IUserService with
@@ -267,63 +242,87 @@ type UserService
       match ctx.User with
       | null -> None
       | principal ->
-        match
-          System.Guid.TryParse(
-            principal.FindFirstValue "userId"
-          )
-        with
+        match System.Guid.TryParse(principal.FindFirstValue "userId") with
         | false, _ -> None
         | true, userId -> Some userId
 
     member x.GetUser() =
-      handler {
-        let userId = (x :> IUserService).GetUserId()
-        let session = docStore.LightweightSession()
+      match user with
+      | None ->
+        handler {
+          let userId = (x :> IUserService).GetUserId()
+          let session = docStore.LightweightSession()
 
-        let! userRecord =
-          Handler.return' userId
-          |> Handler.bindOption (fun userId ->
-          session.LoadAsync<UserRecord> userId
-          |> Handler.returnTask |> Handler.map Option.ofObj)
+          let! userRecord =
+            Handler.return' userId
+            |> Handler.bindOption (fun userId ->
+              session.LoadAsync<UserRecord> userId
+              |> Handler.returnTask
+              |> Handler.map Option.ofObj)
 
-        match userRecord with
-        | Some ur ->
-          user <-
-            { username = ur.Username
-              id = ur.Id
-              roles =
-                ur.Roles
-                |> Option.defaultValue []
-                |> Set.ofList }
-            |> Some
+          match userRecord with
+          | Some ur ->
+            user <-
+              { username = ur.Username
+                id = ur.Id
+                roles = ur.Roles |> Option.defaultValue [] |> Set.ofList }
+              |> Some
 
-          return user
-        | None -> return None
-      }
+            return user
+          | None -> return None
+        }
+      | Some user -> Handler.return' (Some user)
 
+    member _.GetConnectionIdentifier() =
+      let ctx = httpContextAccessor.HttpContext
 
-let private updateUser
-  (id: System.Guid, events: seq<UserEvent>)
-  =
+      let knownId =
+        match ctx.User with
+        | null -> None
+        | principal ->
+          System.Guid.TryParse(principal.FindFirstValue "userId")
+          |> Option.ofTry
+          |> Option.orElseWith (fun () ->
+            System.Guid.TryParse(
+              principal.FindFirstValue "connectionIdentifier"
+            )
+            |> Option.ofTry)
+
+      match knownId with
+      | Some uuid -> task { return uuid }
+      | None ->
+        let connectionIdentifier = System.Guid.NewGuid()
+
+        let claim =
+          Claim("connectionIdentifier", connectionIdentifier.ToString())
+
+        let identity = ClaimsIdentity([ claim ], "Cookies")
+        let principal = ClaimsPrincipal identity
+
+        task {
+          do!
+            Response.signInOptions
+              "Cookies"
+              principal
+              (AuthenticationProperties())
+              ctx
+
+          return connectionIdentifier
+        }
+
+let private updateUser (id: System.Guid, events: seq<UserEvent>) =
   handler {
-    let! documentStore =
-      Handler.fromCtx (fun ctx ->
-        ctx.Plug<IDocumentStore>())
+    let! documentStore = Handler.fromCtx (fun ctx -> ctx.Plug<IDocumentStore>())
 
     let session = documentStore.LightweightSession()
 
-    let eventObjs: obj[] =
-      Array.ofSeq events |> Array.map box
+    let eventObjs: obj[] = Array.ofSeq events |> Array.map box
 
     session.Events.Append(id, eventObjs) |> ignore
 
-    do!
-      Handler.returnTask (
-        task { do! session.SaveChangesAsync() }
-      )
+    do! Handler.returnTask (task { do! session.SaveChangesAsync() })
 
-    return!
-      Handler.returnTask (session.LoadAsync<UserRecord> id)
+    return! Handler.returnTask (session.LoadAsync<UserRecord> id)
   }
 
 let private createUser (evt: UserEvent) =
@@ -332,18 +331,12 @@ let private createUser (evt: UserEvent) =
 
     let source =
       match evt with
-      | Created { ExternalInfo = Some(GoogleInfo _) } ->
-        "Google"
+      | Created { ExternalInfo = Some(GoogleInfo _) } -> "Google"
       | _ -> "direct login"
 
-    logger.LogInformation(
-      "New user created via {source}",
-      source
-    )
+    logger.LogInformation("New user created via {source}", source)
 
-    let! documentStore =
-      Handler.fromCtx (fun ctx ->
-        ctx.Plug<IDocumentStore>())
+    let! documentStore = Handler.fromCtx (fun ctx -> ctx.Plug<IDocumentStore>())
 
     let session = documentStore.LightweightSession()
 
@@ -351,20 +344,13 @@ let private createUser (evt: UserEvent) =
 
     do! session.SaveChangesAsync() |> Handler.returnTask'
 
-    logger.LogInformation(
-      "User record for {id} stored",
-      result.Id
-    )
+    logger.LogInformation("User record for {id} stored", result.Id)
 
-    return!
-      Handler.returnTask (
-        session.LoadAsync<UserRecord> result.Id
-      )
+    return! Handler.returnTask (session.LoadAsync<UserRecord> result.Id)
   }
 
 let getSessionUser () : Handler<User option, _> =
-  Handler.plug<IUserService, _> ()
-  |> Handler.bind (fun us -> us.GetUser())
+  Handler.plug<IUserService, _> () |> Handler.bind (fun us -> us.GetUser())
 
 let ensureSessionUser () : Handler<User, HttpHandler> =
   getSessionUser ()
@@ -372,13 +358,19 @@ let ensureSessionUser () : Handler<User, HttpHandler> =
     match maybeUser with
     | Some user -> Handler.return' user
     | None ->
-      Handler.failure (
-        Response.redirectTemporarily "/user/login"
-      ))
+      Handler.fromCtx (fun ctx -> ctx.Request.Path.ToString())
+      |> Handler.bind (fun path ->
+        Response.challengeOptions
+          "Cookies"
+          (AuthenticationProperties(RedirectUri = path))
+        |> Handler.failure))
+
+let ensureConnectionIdentifier () : Handler<System.Guid, HttpHandler> =
+  Handler.plug<IUserService, _> ()
+  |> Handler.bind (fun us -> Handler.returnTask (us.GetConnectionIdentifier()))
 
 type UserFormInput =
-  { location: string
-    usernameValue: string option
+  { usernameValue: string option
     usernameProblem: string option
     passwordValue: string option
     passwordProblem: string option
@@ -387,18 +379,15 @@ type UserFormInput =
 let private userForm viewContext title input =
   handler {
     let clientId =
-      System.Environment.GetEnvironmentVariable
-        "GOOGLE_OAUTH_CLIENT_ID"
+      System.Environment.GetEnvironmentVariable "GOOGLE_OAUTH_CLIENT_ID"
       |> Option.ofObj
-      |> Option.bind (fun cid ->
-        if cid.IsEmpty() then None else Some cid)
+      |> Option.bind (fun cid -> if cid.IsEmpty() then None else Some cid)
 
     let userInput =
       B.field (fun info ->
         { info with
             label = Some "Username"
-            control =
-              [ _class_ B.ControlMods.hasIconsLeft ]
+            control = [ _class_ B.ControlMods.hasIconsLeft ]
             input =
               [ B.input
                   [ _type_ "text"
@@ -409,14 +398,12 @@ let private userForm viewContext title input =
                     | None -> yield! [] ]
                 B.icon
                   "account"
-                  [ _class_
-                      $"{B.Mods.isSmall} {B.IconMods.isLeft}" ]
+                  [ _class_ $"{B.Mods.isSmall} {B.IconMods.isLeft}" ]
                 match input.usernameProblem with
                 | Some p ->
                   yield!
                     [ _p
-                        [ _class_
-                            $"{B.Mods.help} {B.Mods.isDanger}" ]
+                        [ _class_ $"{B.Mods.help} {B.Mods.isDanger}" ]
                         [ _text p ] ]
                 | None -> yield! [] ] })
 
@@ -424,8 +411,7 @@ let private userForm viewContext title input =
       B.field (fun info ->
         { info with
             label = Some "Password"
-            control =
-              [ _class_ B.ControlMods.hasIconsLeft ]
+            control = [ _class_ B.ControlMods.hasIconsLeft ]
             input =
               [ B.input
                   [ _type_ "password"
@@ -436,16 +422,18 @@ let private userForm viewContext title input =
                     | None -> yield! [] ]
                 B.icon
                   "lock"
-                  [ _class_
-                      $"{B.Mods.isSmall} {B.IconMods.isLeft}" ]
+                  [ _class_ $"{B.Mods.isSmall} {B.IconMods.isLeft}" ]
                 match input.passwordProblem with
                 | Some p ->
                   yield!
                     [ _p
-                        [ _class_
-                            $"{B.Mods.help} {B.Mods.isDanger}" ]
+                        [ _class_ $"{B.Mods.help} {B.Mods.isDanger}" ]
                         [ _text p ] ]
                 | None -> yield! [] ] })
+
+    let! location =
+      Handler.fromCtx (fun ctx ->
+        ctx.Request.Path.ToString() + ctx.Request.QueryString.ToString())
 
     let submitButton =
       B.field (fun info ->
@@ -453,7 +441,7 @@ let private userForm viewContext title input =
             input =
               [ B.button
                   [ _class_ B.Mods.isPrimary
-                    Hx.post input.location
+                    Hx.post location
                     Hx.targetCss "#user-form"
                     Hx.indicator "#user-form button"
                     HxMorph.morphOuterHtml
@@ -464,8 +452,7 @@ let private userForm viewContext title input =
     let! token = Handler.getCsrfToken ()
     let! template = viewContext.contextualTemplate
 
-    let! redirectUri =
-      Handler.createAbsoluteLink "/user/login"
+    let! redirectUri = Handler.createAbsoluteLink "/user/login"
 
     return
       template
@@ -485,18 +472,11 @@ let private userForm viewContext title input =
                   [ _div
                       [ _id_ "g_id_onload"
                         Attr.create "data-client_id" cid
-                        Attr.create
-                          "data-login_uri"
-                          redirectUri
-                        Attr.create
-                          "data-ux_mode"
-                          "redirect" ]
+                        Attr.create "data-login_uri" redirectUri
+                        Attr.create "data-ux_mode" "redirect" ]
                       []
                     _div [ _class_ "g_id_signin" ] [] ] ]
-          _script
-            [ _src_ "https://accounts.google.com/gsi/client"
-              _async_ ]
-            [] ]
+          _script [ _src_ "https://accounts.google.com/gsi/client"; _async_ ] [] ]
   }
 
 let private makePrincipal userRecord =
@@ -513,80 +493,60 @@ let private passwordHasher = PasswordHasher()
 let private signIn authScheme principal url =
   handler {
     do!
-      Handler.fromCtxTask (fun ctx ->
-        task {
-          do! Response.signIn authScheme principal ctx
-        })
+      Handler.fromCtx (
+        Response.signInOptions authScheme principal (AuthenticationProperties())
+      )
+      |> Handler.bind Handler.returnTask'
 
-    return
-      Response.withHxRefresh
-      >> Response.redirectTemporarily url
+    return! hxRedirect url
   }
 
-let private getLoginFormData
-  loginData
-  location
-  viewContext
-  =
+let private getLoginFormData loginData viewContext =
   handler {
     let noUsername = "You must provide a username"
     let noPassword = "You must provide a password"
 
-    match
-      loginData.username.Length, loginData.password.Length
-    with
+    match loginData.username.Length, loginData.password.Length with
     | 0, 0 ->
       let! form =
         userForm
           viewContext
           "Log in"
-          { location = location
-            usernameValue = None
+          { usernameValue = None
             usernameProblem = Some noUsername
             passwordValue = None
             passwordProblem = Some noPassword
             isSignup = false }
 
-      return!
-        Handler.failure (
-          HxFragment "user-form" form |> Handler.flatten
-        )
+      return! Handler.failure (HxFragment "user-form" form |> Handler.flatten)
     | 0, _ ->
       let! form =
         userForm
           viewContext
           "Log in"
-          { location = location
-            usernameValue = None
+          { usernameValue = None
             usernameProblem = Some noUsername
             passwordValue = Some loginData.password
             passwordProblem = None
             isSignup = false }
 
-      return!
-        Handler.failure (
-          HxFragment "user-form" form |> Handler.flatten
-        )
+      return! Handler.failure (HxFragment "user-form" form |> Handler.flatten)
     | _, 0 ->
       let! form =
         userForm
           viewContext
           "Log in"
-          { location = location
-            usernameValue = Some loginData.username
+          { usernameValue = Some loginData.username
             usernameProblem = None
             passwordValue = None
             passwordProblem = Some noPassword
             isSignup = false }
 
-      return!
-        Handler.failure (
-          HxFragment "user-form" form |> Handler.flatten
-        )
+      return! Handler.failure (HxFragment "user-form" form |> Handler.flatten)
     | _, _ -> return LoginFormData loginData
   }
 
-let private getLoginData location viewContext =
+let private getLoginData viewContext =
   handler {
     // If the fields haven't been sent at all,
     // send a 400 error; this is a bad request
@@ -600,18 +560,14 @@ let private getLoginData location viewContext =
         handler {
           match f.TryGetString "credential" with
           | Some creds ->
-            let! cookies =
-              Handler.fromCtx Request.getCookies
+            let! cookies = Handler.fromCtx Request.getCookies
 
-            let googleXsrfCookie =
-              cookies.TryGetStringNonEmpty "g_csrf_token"
+            let googleXsrfCookie = cookies.TryGetStringNonEmpty "g_csrf_token"
 
-            let googleXsrfBody =
-              f.TryGetStringNonEmpty "g_csrf_token"
+            let googleXsrfBody = f.TryGetStringNonEmpty "g_csrf_token"
 
             let xsrfValid =
-              googleXsrfCookie.IsSome
-              && googleXsrfCookie = googleXsrfBody
+              googleXsrfCookie.IsSome && googleXsrfCookie = googleXsrfBody
             // let claimedClientId = f.TryGetStringNonEmpty "clientId"
 
 
@@ -620,15 +576,11 @@ let private getLoginData location viewContext =
 
             // if xsrfValid && clientIdValid then
             if xsrfValid then
-              return
-                Some(
-                  GoogleRedirectData { credential = creds }
-                )
+              return Some(GoogleRedirectData { credential = creds })
             else
               return None
           | None ->
-            let! isValid =
-              Handler.fromCtxTask Xsrf.validateToken
+            let! isValid = Handler.fromCtxTask Xsrf.validateToken
 
             if isValid then
               return
@@ -642,29 +594,20 @@ let private getLoginData location viewContext =
             else
               return None
         })
-      |> Handler.ofOption (
-        Response.withStatusCode 400 >> Response.ofEmpty
-      )
+      |> Handler.ofOption (Response.withStatusCode 400 >> Response.ofEmpty)
 
     match loginData with
-    | LoginFormData formData ->
-      return! getLoginFormData formData location viewContext
+    | LoginFormData formData -> return! getLoginFormData formData viewContext
     | GoogleRedirectData _ -> return loginData
   }
 
-let private authenticationFailed
-  viewContext
-  formData
-  location
-  =
-  let failedAuth =
-    "Matching username and password not found"
+let private authenticationFailed viewContext formData =
+  let failedAuth = "Matching username and password not found"
 
   userForm
     viewContext
     "Log in"
-    { location = location
-      usernameValue = Some formData.username
+    { usernameValue = Some formData.username
       usernameProblem = Some failedAuth
       passwordValue = Some formData.password
       passwordProblem = Some failedAuth
@@ -673,14 +616,11 @@ let private authenticationFailed
 
 let private loginGetEndpoint viewContext =
   handler {
-    let location = "/user/login"
-
     let! form =
       userForm
         viewContext
         "Log in"
-        { location = location
-          usernameValue = None
+        { usernameValue = None
           usernameProblem = None
           passwordValue = None
           passwordProblem = None
@@ -691,13 +631,12 @@ let private loginGetEndpoint viewContext =
   |> Handler.flatten
   |> get "/user/login"
 
-let private loginViaForm loginData location viewContext =
+let private loginViaForm loginData returnUrl viewContext =
   handler {
     let! userRecord =
       findUserRecord loginData.username
       |> Handler.ofOption (
-        authenticationFailed viewContext loginData location
-        |> Handler.flatten
+        authenticationFailed viewContext loginData |> Handler.flatten
       )
 
     let! verificationResult =
@@ -710,33 +649,26 @@ let private loginViaForm loginData location viewContext =
         )
         |> Handler.return'
       | None ->
-        Handler.failure (
-          Response.withStatusCode 403 >> Response.ofEmpty
-        )
+        Handler.failure (Response.withStatusCode 403 >> Response.ofEmpty)
 
     match verificationResult with
     | PasswordVerificationResult.Failed ->
       return!
-        authenticationFailed viewContext loginData location
+        authenticationFailed viewContext loginData
         |> Handler.flatten
         |> Handler.failure
     | PasswordVerificationResult.Success ->
-      return!
-        signIn "Cookies" (makePrincipal userRecord) "/"
+      return! signIn "Cookies" (makePrincipal userRecord) returnUrl
     | PasswordVerificationResult.SuccessRehashNeeded ->
       let! _ =
         updateUser (
           userRecord.Id,
           [ PasswordChanged(
-              passwordHasher.HashPassword(
-                userRecord,
-                loginData.password
-              )
+              passwordHasher.HashPassword(userRecord, loginData.password)
             ) ]
         )
 
-      return!
-        signIn "Cookies" (makePrincipal userRecord) "/"
+      return! signIn "Cookies" (makePrincipal userRecord) returnUrl
     | _ ->
       return
         failwithf
@@ -746,12 +678,21 @@ let private loginViaForm loginData location viewContext =
 
 let private loginPostEndpoint viewContext =
   handler {
-    let location = "/user/login"
-    let! loginData = getLoginData location viewContext
+    let! loginData = getLoginData viewContext
+
+    let! returnUrl =
+      Handler.queryData (fun rd ->
+        rd.TryGetStringNonEmpty "ReturnUrl"
+        |> Option.defaultValue "/"
+        |> fun ru ->
+            if ru = "/user/login" || ru = "/user/signup" then
+              "/"
+            else
+              ru)
 
     match loginData with
     | LoginFormData formData ->
-      return! loginViaForm formData location viewContext
+      return! loginViaForm formData returnUrl viewContext
     | GoogleRedirectData redirectData ->
       let! token =
         Google.Apis.Auth.GoogleJsonWebSignature.ValidateAsync
@@ -763,8 +704,7 @@ let private loginPostEndpoint viewContext =
       let! existingUser = findUserRecordFrom googleSubjectId
 
       match existingUser with
-      | Some user ->
-        return! signIn "Cookies" (makePrincipal user) "/"
+      | Some user -> return! signIn "Cookies" (makePrincipal user) returnUrl
       | None ->
         let newId = System.Guid.NewGuid()
 
@@ -776,11 +716,7 @@ let private loginPostEndpoint viewContext =
                 PasswordHash = None
                 State = Active
                 Roles = Some []
-                ExternalInfo =
-                  Some(
-                    GoogleInfo
-                      { googleId = googleSubjectId }
-                  ) }
+                ExternalInfo = Some(GoogleInfo { googleId = googleSubjectId }) }
           )
 
         return! signIn "Cookies" (makePrincipal newUser) "/"
@@ -790,7 +726,13 @@ let private loginPostEndpoint viewContext =
 
 let private logoutEndpoint =
   handler {
-    return Response.signOutAndRedirect "Cookies" "/"
+    do!
+      Handler.fromCtx (
+        Response.signOutOptions "Cookies" (AuthenticationProperties())
+      )
+      |> Handler.bind Handler.returnTask'
+
+    return! hxRedirect "/"
   }
   |> Handler.flatten
   |> get "/user/logout"
@@ -799,8 +741,7 @@ let private signupGetEndpoint viewContext =
   userForm
     viewContext
     "Sign up"
-    { location = "/user/signup"
-      usernameValue = None
+    { usernameValue = None
       usernameProblem = None
       passwordValue = None
       passwordProblem = None
@@ -812,15 +753,13 @@ let private signupGetEndpoint viewContext =
 let private signupPostEndpoint viewContext =
   handler {
     let! signupData =
-      getLoginData "/user/signup" viewContext
+      getLoginData viewContext
       |> Handler.bind (fun loginData ->
         match loginData with
         | LoginFormData d -> Handler.return' d
         | GoogleRedirectData _ ->
           // Should never be posted to this url
-          Handler.failure (
-            Response.withStatusCode 500 >> Response.ofEmpty
-          ))
+          Handler.failure (Response.withStatusCode 500 >> Response.ofEmpty))
 
     let! user = findUserRecord signupData.username
 
@@ -830,8 +769,7 @@ let private signupPostEndpoint viewContext =
         userForm
           viewContext
           "Sign up"
-          { location = "/user/signup"
-            usernameValue = Some signupData.username
+          { usernameValue = Some signupData.username
             usernameProblem = Some "Username already taken"
             passwordValue = Some signupData.password
             passwordProblem = None
@@ -849,10 +787,7 @@ let private signupPostEndpoint viewContext =
           ExternalInfo = None }
 
       let passwordHash =
-        passwordHasher.HashPassword(
-          userRecord,
-          signupData.password
-        )
+        passwordHasher.HashPassword(userRecord, signupData.password)
 
       let! _ =
         createUser (
@@ -861,8 +796,7 @@ let private signupPostEndpoint viewContext =
                 PasswordHash = Some passwordHash }
         )
 
-      return!
-        signIn "Cookies" (makePrincipal userRecord) "/"
+      return! signIn "Cookies" (makePrincipal userRecord) "/"
   }
   |> Handler.flatten
   |> post "/user/signup"
@@ -876,17 +810,11 @@ let navbarAccountView () =
             []
             {| link = user.username
                dropdown =
-                [ B.navbarItemA
-                    [ _href_ "/user/logout" ]
-                    [ _text "Logout" ] ] |} ]
+                [ B.navbarItemA [ _href_ "/user/logout" ] [ _text "Logout" ] ] |} ]
     | None ->
       return
-        [ B.navbarItemA
-            [ _href_ "/user/login" ]
-            [ _text "Login" ]
-          B.navbarItemA
-            [ _href_ "/user/signup" ]
-            [ _text "Signup" ] ]
+        [ B.navbarItemA [ _href_ "/user/login" ] [ _text "Login" ]
+          B.navbarItemA [ _href_ "/user/signup" ] [ _text "Signup" ] ]
   }
 
 module Service =
@@ -894,17 +822,22 @@ module Service =
 
   let addService: AddService =
     fun _ sc ->
+      sc
+        .AddAuthorization()
+        .AddAuthentication()
+        .AddCookie("Cookies", fun options -> options.LoginPath <- "/user/login")
+      |> ignore
+
       sc.AddScoped<IUserService, UserService>() |> ignore
 
-      sc.ConfigureMarten
-        (fun (storeOpts: Marten.StoreOptions) ->
-          storeOpts.Projections.Add<UserRecordProjection>
-            ProjectionLifecycle.Inline
-          |> ignore
+      sc.ConfigureMarten(fun (storeOpts: Marten.StoreOptions) ->
+        storeOpts.Projections.Add<UserRecordProjection>
+          ProjectionLifecycle.Inline
+        |> ignore
 
-          storeOpts.Projections.Add<GroupRecordProjection>
-            ProjectionLifecycle.Inline
-          |> ignore)
+        storeOpts.Projections.Add<GroupRecordProjection>
+          ProjectionLifecycle.Inline
+        |> ignore)
 
 
   let endpoints viewContext =

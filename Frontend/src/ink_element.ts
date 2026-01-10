@@ -2,7 +2,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { InkLanguageSupport } from '@mavnn/codemirror-lang-ink'
 import { EditorState } from "@codemirror/state"
 import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from "@codemirror/language"
-import { getConnection, makePeerExtension, startCollabAuthority, controlExtension, titleEffect, AssetInfo } from './Collab'
+import { getConnection, makePeerExtension, startCollabAuthority, controlExtension, titleEffect, AssetInfo, activeCollabAuthority } from './Collab'
 import { linter, lintGutter } from '@codemirror/lint'
 import { CompletionContext, autocompletion, snippetCompletion } from "@codemirror/autocomplete"
 import { SyntaxNode } from '@lezer/common'
@@ -113,7 +113,7 @@ export class InkEditor extends HTMLElement {
     let [_, pathRoot, maybeGroupName] = document.location.pathname.split("/", 3)
     let peerExtension
     let connection = getConnection()
-    await connection.start()
+    if (connection.state != "Connected") { await connection.start() }
     if (pathRoot === "script-collab") {
       // We're using an invite link to collaborate
       console.log("Starting collaboration")
@@ -125,9 +125,16 @@ export class InkEditor extends HTMLElement {
       doc = docState.doc
       peerExtension = makePeerExtension(connection, maybeGroupName, docState.tag, docState.version)
     } else {
-      await connection.send("CreateGroup")
-      startCollabAuthority(connection, connection.connectionId!, doc)
-      peerExtension = makePeerExtension(connection, connection.connectionId!, "0", 0)
+      startCollabAuthority(connection, doc, scriptId!)
+      const groupName = await activeCollabAuthority?.groupName!
+      let docRequested = new Promise<{ version: number, doc: string, tag: string }>(
+        resolve => connection.on("DocumentRequested", resolve)
+      )
+      await connection.send("RequestDocument", groupName)
+      const docState = await docRequested
+      doc = docState.doc
+      console.log("Doc received, starting")
+      peerExtension = makePeerExtension(connection, groupName, docState.tag, docState.version)
     }
 
     const editor = new EditorView({

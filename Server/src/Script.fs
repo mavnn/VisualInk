@@ -709,7 +709,7 @@ let lintPost =
       compileResult.completed
       |> Option.map (fun { parsed = parsed } -> getAutocompleteContext parsed)
 
-    if referrer.Length > 36 then
+    if referrer.Length > 36 && not (referrer.Contains "script-collab") then
       match
         System.Guid.TryParse(referrer.Substring(referrer.Length - 36, 36))
       with

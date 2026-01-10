@@ -2,6 +2,7 @@ module VisualInk.Server.Prelude
 
 open System.Threading.Tasks
 open Falco
+open Falco.Htmx
 open Falco.Security
 open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.DependencyInjection
@@ -18,15 +19,15 @@ type Handler<'a, 'error> =
   HttpContext -> Task<HttpContext * Result<'a, 'error>>
 
 module Handler =
-
   let inline return' x : Handler<_, 'error> =
     fun ctx -> Task.FromResult(ctx, Ok x)
 
-  let returnTask x ctx =
-    task {
-      let! v = x
-      return! return' v ctx
-    }
+  let returnTask x : Handler<_, 'error> =
+    fun ctx ->
+      task {
+        let! v = x
+        return! return' v ctx
+      }
 
   let returnTask' (x: Task) : Handler<_, 'error> =
     fun ctx ->
@@ -107,6 +108,10 @@ module Handler =
         | Some v -> return' v
         | None -> failure onFailure
       | None -> failure onFailure)
+
+  let queryData mapQuery =
+    fromCtx Request.getQuery
+    |> map mapQuery
 
   let ofOption onFailure value =
     value
@@ -245,10 +250,24 @@ type ContextualTemplate =
     HttpHandler
    >
 
-let HxFragment targetId template =
+let checkHxRequest () =
   handler {
     let! headers = Handler.fromCtx Request.getHeaders
-    let hxRequest = headers.GetBoolean("hx-request", false)
+    return headers.GetBoolean("hx-request", false)
+  }
+
+let hxRedirect url =
+  handler {
+    let! hxRequest = checkHxRequest()
+    if hxRequest then
+      return Response.withHxRedirect url >> Response.withStatusCode 201 >> Response.ofEmpty
+    else
+      return Response.redirectTemporarily url
+  }
+
+let HxFragment targetId template =
+  handler {
+    let! hxRequest = checkHxRequest()
 
     return
       if hxRequest then

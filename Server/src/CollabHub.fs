@@ -2,11 +2,29 @@ module VisualInk.Server.CollabHub
 
 open Microsoft.AspNetCore.SignalR
 
+type IdProvider() =
+  interface IUserIdProvider with
+    member _.GetUserId context =
+      if isNull context.User then
+        null
+      else
+        let userId = context.User.FindFirst "userId"
+        let connectionIdentifier = context.User.FindFirst "connectionIdentifier"
+        match userId, connectionIdentifier with
+        | null, null -> null
+        | null, ci -> ci.Value
+        | uuid, _ -> uuid.Value
+
 type CollabHub() =
   inherit Hub()
 
   member x.CreateGroup() =
-    x.Groups.AddToGroupAsync(x.Context.ConnectionId, x.Context.ConnectionId)
+    task {
+      let groupId = System.Guid.NewGuid().ToString()
+      do! x.Groups.AddToGroupAsync(x.Context.ConnectionId, groupId)
+      do! x.Groups.AddToGroupAsync(x.Context.ConnectionId, groupId + ":host")
+      do! x.Clients.Client(x.Context.ConnectionId).SendAsync("GroupCreated", groupId)
+    }
 
   member x.RequestDocument(groupName: string) =
     task {
@@ -14,7 +32,7 @@ type CollabHub() =
 
       do!
         x.Clients
-          .Client(groupName)
+          .Group(groupName + ":host")
           .SendAsync("RequestDocument", x.Context.ConnectionId)
     }
 
@@ -26,7 +44,7 @@ type CollabHub() =
     x.Clients.Client(connectionId).SendAsync("DocumentRequested", info)
 
   member x.PushUpdates(groupName: string, version: int, updates: obj array) =
-    x.Clients.Client(groupName).SendAsync("PushUpdates", version, updates)
+    x.Clients.Group(groupName + ":host").SendAsync("PushUpdates", version, updates)
 
   member x.UpdateBroadcast(groupName: string, version: int, update: obj) =
     x.Clients.Group(groupName).SendAsync("UpdateBroadcast", version, update)
