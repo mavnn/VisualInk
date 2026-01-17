@@ -140,6 +140,7 @@ export class InkEditor extends HTMLElement {
     const editor = new EditorView({
       doc,
       extensions: [basicSetup,
+        EditorView.lineWrapping,
         inkLinter(token),
         lintGutter(),
         peerExtension,
