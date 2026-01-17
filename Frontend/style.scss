@@ -112,6 +112,11 @@ dialog {
     display: none !important;
 }
 
+.cm-lineWrapping .cm-line {
+    text-indent: -36px;
+    padding-left: 42px;
+}
+
 .dialogue:before {
     content: open-quote;
 }

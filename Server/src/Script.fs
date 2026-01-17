@@ -229,7 +229,7 @@ let editor input =
             match existing.publishedUrl with
             | Some url -> yield Attr.create "published-url" url
             | None -> () ]
-        [ _pre [ _style_ "display: none;" ] [ _text ink ] ]
+        [ _pre [ _style_ "display: none;" ] [ _textEnc ink ] ]
 
   }
 
@@ -244,13 +244,13 @@ let scriptManager (editorInput: EditorInput) =
     let! music = StoryAssets.findAllMusic ()
 
     let speakerJson =
-      _div [ _id_ "speaker-json"; _hidden_ ] [ _text (serializeJson speakers) ]
+      _div [ _id_ "speaker-json"; _hidden_ ] [ _textEnc (serializeJson speakers) ]
 
     let musicJson =
-      _div [ _id_ "music-json"; _hidden_ ] [ _text (serializeJson music) ]
+      _div [ _id_ "music-json"; _hidden_ ] [ _textEnc (serializeJson music) ]
 
     let sceneJson =
-      _div [ _id_ "scene-json"; _hidden_ ] [ _text (serializeJson scenes) ]
+      _div [ _id_ "scene-json"; _hidden_ ] [ _textEnc (serializeJson scenes) ]
 
     return
       [ _div [ _id_ "editor" ] [ form ]; speakerJson; musicJson; sceneJson ]
@@ -275,7 +275,7 @@ let createGet viewContext =
                   Hx.post "/script/create" ]
                wrapperAttrs = [] |}
             (List.map
-              (fun st -> _option [] [ _text st ])
+              (fun st -> _option [] [ _textEnc st ])
               ("Pick a template:" :: (scriptTemplates |> List.sort))) ]
 
     let html = [ B.title [] "Choose a starting template to modify"; chooser ]
@@ -439,7 +439,7 @@ let private listView scripts =
                    []
                    [ _a
                        [ _href_ $"/script/{s.id.ToString()}" ]
-                       [ _text s.title ] ]
+                       [ _textEnc s.title ] ]
                  _td
                    []
                    [ _text (
@@ -823,7 +823,7 @@ let private getInkToolsStack viewContext =
               []
               [ _code
                   []
-                  [ _text (
+                  [ _textEnc (
                       generatePluginInclude (StackInclude(name, size, nil))
                     ) ] ] ]
 

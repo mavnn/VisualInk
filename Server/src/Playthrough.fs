@@ -359,7 +359,7 @@ let private makeChoiceMenu guid expectedVersion step token =
             _value_ (c.index.ToString())
             _name_ "choice"
             _class_ "notification is-link choiceButton" ]
-          [ _text c.text ])
+          [ _textEnc c.text ])
       |> Seq.toList
     | true, _ ->
       let href =
