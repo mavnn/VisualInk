@@ -279,9 +279,12 @@ let rec cont (guid: System.Guid) (expectedVersion: int64) choice =
       }
 
     // Skip forwards if the returned step has no content at all
-    // and there is no decision to make
+    // and there is no decision to make. If there's no content
+    // but we've reached the end of the story, it'll look a odd
+    // but that's what the script says...
     if
-      currentStep.choices.Length = 0
+      story.canContinue
+      && currentStep.choices.Length = 0
       && System.String.IsNullOrWhiteSpace currentStep.text
     then
       return! cont guid appendAction.Version None
