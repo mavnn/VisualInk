@@ -2,6 +2,34 @@
 
 If you're new to ink, you probably want to check out our [introduction first](/info/ink_guide). With that out of the way, _this_ page focuses on some features of Ink that can be very helpful as your game gets more complex - but which can also be a bit more confusing.
 
+## Giving speakers an alias
+
+It's quite common for character's names to change through the course of a script. Visual Ink allows you to specify multiple names for the same speaker image via a specially constructed variable in the pattern `alias_<speaker_name>_to`:
+
+<ink-element>
+
+```ink
+VAR alias_Bob_to = "Eddy"
+
+~speaker = "Bob"
+I'm Bob, and I look exactly like Eddy!
+
+~alias_Bob_to = "Elly"
+Now I look like Elly!
+
+// Replace any character in the name that causes a variable name error with "_"
+VAR alias_Mr__Jones_to = "Mr. Noone"
+
+~speaker = "Mr. Jones"
+
+Hello! I'm Mr. Jones, Mr. Noone's identical twin brother.
+```
+
+</ink-element>
+
+If a matching alias is found, the image shown will be determined by the value stored in the variable but the name of the speaker shown with the dialogue will be the alias. This allows you to start showing a character without giving away their name or having to add a `#show` tag to every line of dialogue.
+
+
 ## Gathers
 
 Diverts and knots are great for branching your story, but can become very verbose if you have choice points where you branch out for a quick decision (which you may record for later) but then they all continue on a the same point.

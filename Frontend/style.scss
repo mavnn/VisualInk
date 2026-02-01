@@ -50,9 +50,13 @@ html {
 @media all and (min-width:1216px) { html { font-size: 22px; } }
 @media all and (max-width:640px) { html{ font-size: 14px; } }
 
-// #example-viewer {
-//     height: 15rem;
-// }
+/**
+ * Make sure that the menus appear above the text editor
+ */
+.navbar {
+    z-index: 1000;
+}
+
 #editor .cm-editor { border-color: var(--bulma-input-border-color); border-radius: var(--bulma-input-radius); border-style: solid; border-width: var(--bulma-control-border-width); overflow: clip; }
 .cm-scroller {
     font-family: source_code_pro, sans-serif;

@@ -70,7 +70,7 @@ VAR speaker = "Bob" // error!
 </ink-element>
 
 The `speaker`, `scene`, and `music` variables are special variables that control the sound and images displayed by
-Visual Ink. Any other variables are all yours!
+Visual Ink. But remember you can add your own variables to use within your script!
 
 You can use the "Change" buttons at the top of the editor to automatically add a line in your script changing
 the speaker, scene, or music to something that exists in your library. Don't have the thing you need in your library?

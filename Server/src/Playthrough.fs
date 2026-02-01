@@ -149,10 +149,23 @@ module Projection =
                 saveState = forward.saveState
                 previous = Some playthrough.State } }
 
+let private identifierCharSet =
+  let charSet = Ink.CharacterSet()
+
+  Ink.InkParser.ListAllCharacterRanges()
+  |> Array.fold
+    (fun (cs: Ink.CharacterSet) r -> cs.AddRange(r.start, r.``end``))
+    charSet
+
+let private escapeAlias =
+    String.map (fun c -> if identifierCharSet.Contains c then c else '_')
+
 let getStep previousStep (story: Ink.Runtime.Story) =
   handler {
     let getVar name bind =
       story.variablesState.[name] :?> string |> Option.ofObj |> Option.bind bind
+
+    let nonEmptyString v = if v = "" then None else Some v
 
     let getTag name =
       story.currentTags
@@ -163,13 +176,24 @@ let getStep previousStep (story: Ink.Runtime.Story) =
       getVar "speaker" (fun v ->
         if v = "Narrator" || v = "" then None else Some v)
 
-    let scene = getVar "scene" (fun v -> if v = "" then None else Some v)
+    let scene = getVar "scene" nonEmptyString
 
-    let music = getVar "music" (fun v -> if v = "" then None else Some v)
+    let music = getVar "music" nonEmptyString
 
     let emote = getTag "emote"
 
-    let image = getTag "show"
+    // Authors can directly override the image being shown with the
+    // #show tag, or indirectly via an "alias_<speaker>_to" variable.
+    // The #show tag takes precedence if both exist.
+    let showTag = getTag "show"
+
+    let aliasVar =
+      speaker
+      |> Option.bind (fun alias ->
+        let escapedAlias = escapeAlias alias
+        getVar $"alias_{escapedAlias}_to" nonEmptyString)
+
+    let image = showTag |> Option.orElse aliasVar
 
     // Move to vfx for a more general term
     let aniTag = getTag "animation"
@@ -727,8 +751,7 @@ let stepBackPost viewContext =
 
     use! session = getRunnerSession ()
 
-    let streamEvent =
-      session.Events.Append(guid, expectedVersion + 1L, PlayBack |> box)
+    session.Events.Append(guid, expectedVersion + 1L, PlayBack |> box) |> ignore
 
     do! DocStore.saveChanges session
 
