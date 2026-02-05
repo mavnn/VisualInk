@@ -1,5 +1,7 @@
 # Visual Ink
 
+> This repository has been archived; VisualInk has moved to https://code.mavnn.eu/mavnn/VisualInk
+
 Building visual novels with Ink from Inkle.
 
 If you just want to _use_ Visual Ink, you're probably best off going to [the official server](https://visualink.mavnn.eu/). You can log in with a Google account, or with a username and password.
